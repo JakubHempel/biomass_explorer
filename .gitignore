@@ -1,0 +1,13 @@
+# Credentials
+gee-key.json
+.env
+
+# Database
+biomass_results.db
+*.db-journal
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.vscode/
