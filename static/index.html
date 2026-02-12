@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Biomass Explorer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.css" />
+    <style>
+        :root { --primary: #2980b9; --bg: #f4f7f6; --text: #2c3e50; --accent: #be185d; --success: #27ae60; }
+        body { margin: 0; padding: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); }
+        
+        #sidebar { width: 380px; background: #fff; padding: 25px; box-shadow: 4px 0 20px rgba(0,0,0,0.05); z-index: 1000; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+        #map { flex-grow: 1; position: relative; }
+
+        .card { background: white; padding: 18px; border-radius: 12px; border: 1px solid #edf2f7; }
+        h3 { margin: 0 0 15px 0; font-size: 0.9rem; color: #718096; text-transform: uppercase; border-bottom: 1px solid #edf2f7; padding-bottom: 8px; }
+        label { display: block; margin: 12px 0 6px; font-weight: 600; font-size: 0.8rem; color: #4a5568; }
+        
+        input, textarea, button { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; box-sizing: border-box; }
+        .indices-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        .checkbox-item { display: flex; align-items: center; font-size: 0.7rem; font-weight: 600; }
+        .checkbox-item input { width: auto; margin-right: 5px; }
+
+        #dates-container { max-height: 200px; overflow-y: auto; border: 1px solid #edf2f7; background: #f8fafc; border-radius: 8px; margin-top: 10px; }
+        .date-row { display: grid; grid-template-columns: 30px 1fr; padding: 10px; border-bottom: 1px solid #edf2f7; cursor: pointer; font-size: 0.85rem; align-items: center; }
+        .date-row:hover { background: #f1f5f9; }
+
+        button.primary { background: var(--primary); color: white; font-weight: 700; cursor: pointer; border: none; transition: 0.3s; }
+        button.secondary { background: var(--success); color: white; font-weight: 700; cursor: pointer; border: none; margin-top: 10px; transition: 0.3s; }
+        button.outline { background: white; border: 2px solid var(--primary); color: var(--primary); font-weight: 700; cursor: pointer; margin-top: 5px; transition: 0.2s; }
+        button.outline:hover { background: var(--primary); color: white; }
+        button:disabled { background: #cbd5e0; cursor: not-allowed; }
+
+        #status { font-size: 0.8rem; font-weight: 600; color: #64748b; padding: 12px; background: #f1f5f9; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0; }
+
+        /* Panel Legendy */
+        #legend-panel {
+            position: absolute; bottom: 30px; right: 20px; z-index: 999;
+            background: white; padding: 20px; border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 320px; display: none;
+        }
+        #legend-tabs { display: flex; gap: 6px; margin-bottom: 15px; flex-wrap: wrap; }
+        .leg-tab { background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 10px; font-size: 0.7rem; border-radius: 6px; cursor: pointer; font-weight: 700; color: #64748b; }
+        .leg-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+        /* Usunięto styl dla short-name, zostawiono tylko pełną nazwę */
+        .full-name { font-size: 1.1rem; font-weight: 800; color: #1e293b; margin-bottom: 12px; line-height: 1.3; }
+        .formula-box { background: #fff1f2; padding: 12px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.75rem; color: #be185d; margin: 10px 0; border-left: 4px solid #f472b6; }
+        
+        .legend-gradient { height: 16px; width: 100%; border-radius: 4px; margin-top: 15px; }
+        .leg-labels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.85rem; font-weight: 800; color: #475569; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size: 1.5rem;">🛰️</span>
+        <h2 style="margin:0; font-size: 1.2rem;">Biomass Explorer</h2>
+    </div>
+
+    <div class="card">
+        <h3>1. Query Configuration</h3>
+        <label>Field Identifier</label>
+        <input type="text" id="field_id" placeholder="e.g. Field_1">
+        <label>Observation Window</label>
+        <div style="display: flex; gap: 5px;"><input type="date" id="start_date"><input type="date" id="end_date"></div>
+        
+        <label>Spectral Indices</label>
+        <div class="indices-grid">
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="NDVI"> NDVI</div>
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="GNDVI"> GNDVI</div>
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="EVI"> EVI</div>
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="MSAVI2"> MSAVI2</div>
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="SAVI"> SAVI</div>
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="OSAVI"> OSAVI</div>
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="NDRE"> NDRE</div>
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="REIP"> REIP</div>
+            <div class="checkbox-item"><input type="checkbox" name="idx" value="NDWI"> NDWI</div>
+        </div>
+        
+        <label>Area of Interest (GeoJSON)</label>
+        <textarea id="geojson_input" style="height:60px;" placeholder="[[[lon, lat], ...]]]"></textarea>
+        <button class="primary" id="btn-search" onclick="startAnalysis()">🔍 SEARCH COLLECTION</button>
+    </div>
+
+    <div id="result-card" class="card" style="display:none;">
+        <h3>2. Analysis Dashboard</h3>
+        <button class="outline" onclick="zoomToAOI()">🎯 RECENTER ON AOI</button>
+        <div id="dates-container"></div>
+        <button class="secondary" id="btn-load" onclick="loadSelectedLayers()">🌍 LOAD SELECTED MAPS</button>
+    </div>
+
+    <div id="status">Ready.</div>
+</div>
+
+<div id="map">
+    <div id="legend-panel">
+        <div id="legend-tabs"></div>
+        <div id="leg-content">
+            <div class="full-name" id="full-name">Index Full Name</div>
+            <div class="formula-box" id="leg-formula">Formula</div>
+            <p id="leg-desc" style="font-size:0.8rem; color:#64748b; margin-bottom:15px;"></p>
+            <div id="leg-gradient" class="legend-gradient"></div>
+            <div class="leg-labels"><span id="leg-min">Min</span><span id="leg-max">Max</span></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.js"></script>
+
+<script>
+    const API_URL = window.location.origin;
+    
+    const INDEX_INFO = {
+        "NDVI": { short: "NDVI", full: "Normalized Difference Vegetation Index", formula: "(NIR - Red) / (NIR + Red)", desc: "Standard for assessing green biomass health.", gradient: "linear-gradient(to right, #a50026, #f46d43, #fee08b, #d9ef8b, #66bd63, #006837)", range: ["-1.0", "1.0"] },
+        "GNDVI": { short: "GNDVI", full: "Green Normalized Difference Vegetation Index", formula: "(NIR - Green) / (NIR + Green)", desc: "Optimized for chlorophyll and nitrogen monitoring.", gradient: "linear-gradient(to right, #a50026, #f46d43, #ffffbf, #a6d96a, #1a9850)", range: ["-1.0", "1.0"] },
+        "EVI": { short: "EVI", full: "Enhanced Vegetation Index", formula: "2.5 * ((NIR - Red) / (NIR + 6*Red - 7.5*Blue + 1))", desc: "Reduces atmospheric and soil background interference.", gradient: "linear-gradient(to right, #CE7E45, #FCD163, #66A000, #207401)", range: ["-1.0", "1.0"] },
+        "MSAVI2": { short: "MSAVI2", full: "Modified Soil Adjusted Vegetation Index", formula: "(2*NIR + 1 - sqrt((2*NIR+1)^2 - 8*(NIR-Red))) / 2", desc: "Best for early growth with low plant density.", gradient: "linear-gradient(to right, #8c510a, #d8b365, #f6e8c3, #c7eae5, #5ab4ac, #01665e)", range: ["-1.0", "1.0"] },
+        "NDRE": { short: "NDRE", full: "Normalized Difference Red Edge Index", formula: "(NIR - RE1) / (NIR + RE1)", desc: "Critical for late-stage nitrogen analysis.", gradient: "linear-gradient(to right, #440154, #3b528b, #21908c, #5dc963, #fde725)", range: ["-1.0", "1.0"] },
+        "NDWI": { short: "NDWI", full: "Normalized Difference Water Index", formula: "(Green - NIR) / (Green + NIR)", desc: "Detects plant water stress and moisture levels.", gradient: "linear-gradient(to right, #ffffd9, #41b6c4, #225ea8, #081d58)", range: ["-1.0", "1.0"] },
+        "SAVI": { short: "SAVI", full: "Soil Adjusted Vegetation Index", formula: "((NIR - Red) / (NIR + Red + 0.5)) * 1.5", desc: "Corrects for soil brightness background.", gradient: "linear-gradient(to right, #8c510a, #f6e8c3, #01665e)", range: ["-1.0", "1.0"] },
+        "OSAVI": { short: "OSAVI", full: "Optimized Soil Adjusted Vegetation Index", formula: "(NIR - Red) / (NIR + Red + 0.16)", desc: "Improved soil adjustment for sparse vegetation.", gradient: "linear-gradient(to right, #8c510a, #f6e8c3, #01665e)", range: ["-1.0", "1.0"] },
+        "REIP": { short: "REIP", full: "Red Edge Inflection Point", formula: "700 + 40 * (((Red + RE3)/2 - RE1)/(RE2 - RE1))", desc: "Tracks spectral shifts in the red-edge slope (nm).", gradient: "linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000)", range: ["700", "760"] }
+    };
+
+    // --- MAP CORE ---
+    const satellite = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=en', { maxZoom: 20 });
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+
+    const map = L.map('map', { center: [52.0, 19.0], zoom: 6, layers: [satellite] });
+
+    const baseMaps = { "Satellite View": satellite, "Street Map (OSM)": osm };
+    let layerControl = L.control.layers(baseMaps, {}, { collapsed: false }).addTo(map);
+
+    L.control.scale({ metric: true, imperial: false }).addTo(map);
+    const miniMap = new L.Control.MiniMap(L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'), { toggleDisplay: true, position: 'bottomleft' }).addTo(map);
+
+    let activeLayers = [];
+    let aoiLayer = null;
+
+    function setStatus(msg, type='info') {
+        const el = document.getElementById('status');
+        el.innerText = msg;
+        el.style.color = type === 'error' ? '#e53e3e' : '#64748b';
+    }
+
+    function zoomToAOI() {
+        const geoJSONStr = document.getElementById('geojson_input').value.trim();
+        if(!geoJSONStr) { alert("Enter GeoJSON coordinates first."); return; }
+        try {
+            const coords = JSON.parse(geoJSONStr);
+            if (aoiLayer) map.removeLayer(aoiLayer);
+            aoiLayer = L.geoJSON({ type: "Polygon", coordinates: coords }, {
+                style: { color: "#ffffff", weight: 3, fillOpacity: 0.05, dashArray: "8, 8" }
+            }).addTo(map);
+            map.fitBounds(aoiLayer.getBounds(), { padding: [50, 50], animate: true });
+            setStatus("🎯 Map centered on AOI.");
+        } catch(e) { alert("Invalid GeoJSON format."); }
+    }
+
+    function updateLegend(idx) {
+        const info = INDEX_INFO[idx];
+        if (!info) return;
+        document.getElementById('legend-panel').style.display = 'block';
+        document.getElementById('full-name').innerText = info.full;
+        document.getElementById('leg-formula').innerText = info.formula;
+        document.getElementById('leg-desc').innerText = info.desc;
+        document.getElementById('leg-gradient').style.background = info.gradient;
+        document.getElementById('leg-min').innerText = info.range[0];
+        document.getElementById('leg-max').innerText = info.range[1];
+        document.querySelectorAll('.leg-tab').forEach(t => t.classList.toggle('active', t.innerText === idx));
+    }
+
+    async function startAnalysis() {
+        const field_id = document.getElementById('field_id').value;
+        const start = document.getElementById('start_date').value;
+        const end = document.getElementById('end_date').value;
+        const geoJSONStr = document.getElementById('geojson_input').value.trim();
+        const indices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
+
+        if(!field_id || !start || !end || !geoJSONStr) { alert("Please complete all parameters."); return; }
+        setStatus("🛰️ Polling Sentinel-2 collection...");
+        document.getElementById('btn-search').disabled = true;
+
+        try {
+            const currentQuery = { field_id, start_date: start, end_date: end, indices, geojson: { type: "Polygon", coordinates: JSON.parse(geoJSONStr) } };
+            const res = await fetch(`${API_URL}/calculate/biomass`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(currentQuery) });
+            const data = await res.json();
+            const cont = document.getElementById('dates-container'); cont.innerHTML = "";
+            if(data.timeseries.length === 0) {
+                setStatus("❌ No clear imagery found for this period.", "error");
+            } else {
+                data.timeseries.forEach(t => {
+                    cont.innerHTML += `<div class="date-row"><input type="checkbox" class="date-checkbox" value="${t.date}"><span>${t.date}</span></div>`;
+                });
+                document.getElementById('result-card').style.display = 'block';
+                zoomToAOI();
+                setStatus(`✅ Data retrieved. Found ${data.timeseries.length} dates.`);
+            }
+        } catch(e) { setStatus("❌ API Connection Failed.", "error"); }
+        document.getElementById('btn-search').disabled = false;
+    }
+
+    async function loadSelectedLayers() {
+        const dates = Array.from(document.querySelectorAll('.date-checkbox:checked')).map(cb => cb.value);
+        const geoJSONStr = document.getElementById('geojson_input').value.trim();
+        const indices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
+
+        if(dates.length === 0) { alert("Select at least one date."); return; }
+        setStatus("🎨 Requesting map tiles...");
+        document.getElementById('btn-load').disabled = true;
+        zoomToAOI();
+
+        activeLayers.forEach(l => { map.removeLayer(l); layerControl.removeLayer(l); });
+        activeLayers = [];
+        document.getElementById('legend-tabs').innerHTML = "";
+
+        for (const date of dates) {
+            for (const idx of indices) {
+                try {
+                    const res = await fetch(`${API_URL}/visualize/map`, { 
+                        method: 'POST', 
+                        headers: {'Content-Type': 'application/json'}, 
+                        body: JSON.stringify({ field_id: "tmp", start_date: date, end_date: date, indices: [idx], geojson: { type: "Polygon", coordinates: JSON.parse(geoJSONStr) }}) 
+                    });
+                    const data = await res.json();
+                    const tileLayer = L.tileLayer(data.layer_url, { opacity: 1.0 });
+                    layerControl.addOverlay(tileLayer, `<b>${date}</b>: ${idx}`);
+                    activeLayers.push(tileLayer);
+
+                    if (!Array.from(document.querySelectorAll('.leg-tab')).some(t => t.innerText === idx)) {
+                        const btn = document.createElement('div');
+                        btn.className = 'leg-tab'; btn.innerText = idx;
+                        btn.onclick = () => updateLegend(idx);
+                        document.getElementById('legend-tabs').appendChild(btn);
+                    }
+                    if (activeLayers.length === 1) { tileLayer.addTo(map); updateLegend(idx); }
+                } catch(e) { console.error(e); }
+            }
+        }
+        setStatus("✨ Ready.");
+        document.getElementById('btn-load').disabled = false;
+    }
+
+    map.on('overlayadd', (e) => {
+        const match = e.name.match(/: ([A-Z0-9]+)/);
+        if (match) updateLegend(match[1]);
+    });
+</script>
+</body>
+</html>
