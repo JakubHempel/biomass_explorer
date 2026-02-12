@@ -57,7 +57,7 @@ GEE_PROJECT_ID='your-google-cloud-project-id'
 4.  **First-time Auth:** Upon the first run, the console will provide a link. Open it in your browser, log in with your Google account, and follow the instructions to grant GEE access. The system will store a local token for future sessions.
 
 ### 4. Launching the Frontend
-Simply open `map_viewer.html` in any modern web browser to start exploring your fields. No additional web server is needed for the frontend.
+Simply open `http://127.0.0.1:8000` in any modern web browser to start exploring your fields. No additional web server is needed for the frontend.
 
 ---
 
