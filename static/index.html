@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Biomass Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.css" />
     <link rel="stylesheet" href="/static/style.css">
@@ -10,44 +13,132 @@
 <body>
 
 <div id="sidebar">
-    <div style="display:flex; align-items:center; gap:10px;">
-        <span style="font-size: 1.5rem;">🛰️</span>
-        <h2 style="margin:0; font-size: 1.2rem;">Biomass Explorer</h2>
-    </div>
 
-    <div class="card">
-        <h3>1. Query Configuration</h3>
-        <label>Field Identifier</label>
-        <input type="text" id="field_id" placeholder="e.g. Field_1">
-        <label>Observation Window</label>
-        <div style="display: flex; gap: 5px;"><input type="date" id="start_date"><input type="date" id="end_date"></div>
-        
-        <label>Spectral Indices</label>
-        <div class="indices-grid">
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="NDVI"> NDVI</div>
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="GNDVI"> GNDVI</div>
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="EVI"> EVI</div>
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="MSAVI2"> MSAVI2</div>
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="SAVI"> SAVI</div>
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="OSAVI"> OSAVI</div>
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="NDRE"> NDRE</div>
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="REIP"> REIP</div>
-            <div class="checkbox-item"><input type="checkbox" name="idx" value="NDWI"> NDWI</div>
+    <!-- Brand banner -->
+    <div class="app-header">
+        <div class="app-header-inner">
+            <span class="app-icon">🛰️</span>
+            <div>
+                <h2 class="app-title">Biomass Explorer</h2>
+                <span class="app-subtitle">Crop monitoring from space</span>
+            </div>
         </div>
-        
-        <label>Area of Interest (GeoJSON)</label>
-        <textarea id="geojson_input" style="height:60px;" placeholder="[[[lon, lat], ...]]]"></textarea>
-        <button class="primary" id="btn-search" onclick="startAnalysis()">🔍 SEARCH COLLECTION</button>
     </div>
 
-    <div id="result-card" class="card" style="display:none;">
-        <h3>2. Analysis Dashboard</h3>
-        <button class="outline" onclick="zoomToAOI()">🎯 RECENTER ON AOI</button>
-        <div id="dates-container"></div>
-        <button class="secondary" id="btn-load" onclick="loadSelectedLayers()">🌍 LOAD SELECTED MAPS</button>
-    </div>
+    <div class="sidebar-body">
 
-    <div id="status">Ready.</div>
+        <!-- Collapsible About panel -->
+        <details class="about-panel">
+            <summary class="about-toggle">
+                <span class="about-toggle-icon">&#9432;</span>
+                About this tool
+                <span class="about-chevron"></span>
+            </summary>
+            <div class="about-content">
+                <p><b>Biomass Explorer</b> analyses satellite imagery to monitor crop health, vegetation condition, and drought stress over your fields.</p>
+
+                <div class="about-section">
+                    <div class="about-section-title">Satellites used</div>
+                    <div class="about-sat">
+                        <span class="sensor-badge s2">Optical</span>
+                        <span><b>Sentinel-2</b> &mdash; captures vegetation &amp; growth indices at 10 m resolution. Revisit time: <b>~5 days</b>.</span>
+                    </div>
+                    <div class="about-sat">
+                        <span class="sensor-badge ls">Thermal</span>
+                        <span><b>Landsat 8/9</b> &mdash; captures surface temperature &amp; drought indices at 30 m resolution. Revisit time: <b>~8 days</b>.</span>
+                    </div>
+                    <p class="about-note">Because they fly on different orbits, the available dates for each satellite will be different. Results are grouped accordingly.</p>
+                </div>
+
+                <div class="about-section">
+                    <div class="about-section-title">Cloud filtering</div>
+                    <p>Only images where <b>at least 80 %</b> of your field is cloud-free are used. Persistent cloud cover may result in fewer available dates. Extending the time period usually helps.</p>
+                </div>
+
+                <div class="about-section">
+                    <div class="about-section-title">Condition ratings</div>
+                    <p>Period averages are evaluated against crop-science thresholds and labelled as <span class="cond-excellent" style="font-weight:700;">Excellent</span>, <span class="cond-good" style="font-weight:700;">Good</span>, <span class="cond-fair" style="font-weight:700;">Fair</span>, <span class="cond-poor" style="font-weight:700;">Poor</span>, or <span class="cond-critical" style="font-weight:700;">Critical</span>.</p>
+                </div>
+            </div>
+        </details>
+
+        <div class="card">
+            <h3><span class="section-num">1</span> Setup</h3>
+
+            <label>Field Name</label>
+            <input type="text" id="field_id" placeholder="e.g. North Wheat Field">
+
+            <label>Time Period</label>
+            <div class="date-inputs">
+                <input type="date" id="start_date">
+                <span class="date-sep">to</span>
+                <input type="date" id="end_date">
+            </div>
+
+            <!-- Vegetation & Growth (Sentinel-2) -->
+            <div class="idx-group-header">
+                <label>Vegetation &amp; Growth</label>
+                <a href="#" class="select-all-link" onclick="toggleGroupIndices('s2', this); return false;">select all</a>
+            </div>
+            <div class="indices-grid" id="s2-indices">
+                <label class="cb-item" title="Vegetation greenness & overall crop health"><input type="checkbox" name="idx" value="NDVI" data-group="s2" checked><span>NDVI</span></label>
+                <label class="cb-item" title="Red-edge vegetation status"><input type="checkbox" name="idx" value="NDRE" data-group="s2"><span>NDRE</span></label>
+                <label class="cb-item" title="Green vegetation / chlorophyll"><input type="checkbox" name="idx" value="GNDVI" data-group="s2"><span>GNDVI</span></label>
+                <label class="cb-item" title="Enhanced vegetation (atmosphere corrected)"><input type="checkbox" name="idx" value="EVI" data-group="s2"><span>EVI</span></label>
+                <label class="cb-item" title="Vegetation adjusted for soil brightness"><input type="checkbox" name="idx" value="SAVI" data-group="s2"><span>SAVI</span></label>
+                <label class="cb-item" title="Chlorophyll content via red-edge"><input type="checkbox" name="idx" value="CIre" data-group="s2"><span>CI-re</span></label>
+                <label class="cb-item" title="Chlorophyll content (MERIS method)"><input type="checkbox" name="idx" value="MTCI" data-group="s2"><span>MTCI</span></label>
+                <label class="cb-item" title="Red-edge chlorophyll (4-band)"><input type="checkbox" name="idx" value="IRECI" data-group="s2"><span>IRECI</span></label>
+                <label class="cb-item" title="Leaf water / moisture content"><input type="checkbox" name="idx" value="NDMI" data-group="s2"><span>NDMI</span></label>
+                <label class="cb-item" title="Drought monitoring using dual SWIR"><input type="checkbox" name="idx" value="NMDI" data-group="s2"><span>NMDI</span></label>
+            </div>
+
+            <!-- Temperature & Drought (Landsat) -->
+            <div class="idx-group-header">
+                <label>Temperature &amp; Drought</label>
+                <a href="#" class="select-all-link" onclick="toggleGroupIndices('ls', this); return false;">select all</a>
+            </div>
+            <div class="indices-grid" id="ls-indices">
+                <label class="cb-item" title="Surface temperature from thermal infrared"><input type="checkbox" name="idx" value="LST" data-group="ls"><span>LST</span></label>
+                <label class="cb-item" title="Vegetation water supply proxy"><input type="checkbox" name="idx" value="VSWI" data-group="ls"><span>VSWI</span></label>
+                <label class="cb-item" title="Temperature-based soil/vegetation dryness"><input type="checkbox" name="idx" value="TVDI" data-group="ls"><span>TVDI</span></label>
+                <label class="cb-item" title="Temperature stress condition"><input type="checkbox" name="idx" value="TCI" data-group="ls"><span>TCI</span></label>
+                <label class="cb-item" title="Composite vegetation health score"><input type="checkbox" name="idx" value="VHI" data-group="ls"><span>VHI</span></label>
+            </div>
+
+            <label>Area of Interest <span class="label-hint">(GeoJSON polygon)</span></label>
+            <textarea id="geojson_input" class="geo-textarea" placeholder="Paste coordinates: [[[lon, lat], ...]]"></textarea>
+
+            <button class="btn-primary" id="btn-search" onclick="startAnalysis()">
+                <span id="btn-search-text">SEARCH FOR IMAGES</span>
+                <span id="btn-search-spinner" class="spinner" style="display:none;"></span>
+            </button>
+        </div>
+
+        <!-- Results Card -->
+        <div id="result-card" class="card" style="display:none;">
+            <h3><span class="section-num">2</span> Results Overview</h3>
+
+            <div id="summary-panel"></div>
+            <div id="warnings-panel"></div>
+
+            <label style="margin-top:4px;">Available Observation Dates</label>
+            <div id="dates-container"></div>
+
+            <div class="action-row">
+                <button class="btn-outline" onclick="zoomToAOI()">RECENTER ON FIELD</button>
+            </div>
+            <button class="btn-secondary" id="btn-load" onclick="loadSelectedLayers()">
+                <span id="btn-load-text">VISUALIZE ON MAP</span>
+                <span id="btn-load-spinner" class="spinner" style="display:none;"></span>
+            </button>
+        </div>
+
+        <div id="status">
+            <span id="status-text">Ready to start.</span>
+        </div>
+
+    </div>
 </div>
 
 <div id="map">
@@ -56,7 +147,7 @@
         <div id="leg-content">
             <div class="full-name" id="full-name">Index Full Name</div>
             <div class="formula-box" id="leg-formula">Formula</div>
-            <p id="leg-desc" style="font-size:0.8rem; color:#64748b; margin-bottom:15px;"></p>
+            <p id="leg-desc" style="font-size:0.78rem; color:#94a3b8; margin-bottom:15px; line-height:1.55;"></p>
             <div id="leg-gradient" class="legend-gradient"></div>
             <div class="leg-labels"><span id="leg-min">Min</span><span id="leg-max">Max</span></div>
         </div>
