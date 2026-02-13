@@ -6,11 +6,13 @@ class AnalysisRequest(BaseModel):
     geojson: dict
     start_date: str
     end_date: str
-    indices: List[str] = ["NDVI", "GNDVI", "EVI", "MSAVI2", "SAVI", "OSAVI", "NDRE", "REIP", "NDWI"]
+    indices: List[str] = ["NDVI", "NDRE", "GNDVI", "EVI", "SAVI", "CIre", "MTCI", "IRECI", "NDMI", "NMDI",
+                          "LST", "VSWI", "TVDI", "TCI", "VHI"]
     cloud_cover: int = 20
 
 class TimeseriesPoint(BaseModel):
     date: str
+    sensor: str = ""
     values: Dict[str, float]
 
 class BiomassResponse(BaseModel):
