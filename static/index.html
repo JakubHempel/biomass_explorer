@@ -2,38 +2,47 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biomass Explorer</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.css" />
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<script>if(localStorage.getItem('biomass_dark_mode')==='1')document.body.classList.add('dark-mode');</script>
+
+<!-- Mobile sidebar overlay -->
+<div class="mobile-overlay" id="mobile-overlay" onclick="closeMobileSidebar()"></div>
 
 <div id="sidebar">
 
     <!-- Brand banner -->
     <div class="app-header">
         <div class="app-header-inner">
-            <span class="app-icon">🛰️</span>
+            <span class="app-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span>
             <div>
                 <h2 class="app-title">Biomass Explorer</h2>
                 <span class="app-subtitle">Crop monitoring from space</span>
             </div>
+            <button type="button" class="header-dark-btn" id="btn-dark-mode" onclick="toggleDarkMode()" title="Toggle dark/light mode">&#9789;</button>
+            <button type="button" class="header-info-btn" id="btn-about" onclick="toggleAboutPanel()" title="About this tool">&#9432;</button>
         </div>
     </div>
 
-    <div class="sidebar-body">
-
-        <!-- Collapsible About panel -->
-        <details class="about-panel">
-            <summary class="about-toggle">
-                <span class="about-toggle-icon">&#9432;</span>
-                About this tool
-                <span class="about-chevron"></span>
-            </summary>
+    <!-- About overlay (always accessible via header button) -->
+    <div id="about-overlay" class="about-overlay" style="display:none;">
+        <div class="about-overlay-card">
+            <div class="about-overlay-header">
+                <span class="about-overlay-title">About this tool</span>
+                <button type="button" class="about-close-btn" onclick="toggleAboutPanel()">&times;</button>
+            </div>
             <div class="about-content">
                 <p><b>Biomass Explorer</b> analyses satellite imagery to monitor crop health, vegetation condition, and drought stress over your fields.</p>
 
@@ -59,55 +68,137 @@
                     <div class="about-section-title">Condition ratings</div>
                     <p>Period averages are evaluated against crop-science thresholds and labelled as <span class="cond-excellent" style="font-weight:700;">Excellent</span>, <span class="cond-good" style="font-weight:700;">Good</span>, <span class="cond-fair" style="font-weight:700;">Fair</span>, <span class="cond-poor" style="font-weight:700;">Poor</span>, or <span class="cond-critical" style="font-weight:700;">Critical</span>.</p>
                 </div>
-            </div>
-        </details>
 
-        <div class="card">
-            <h3><span class="section-num">1</span> Setup</h3>
-
-            <label>Field Name</label>
-            <input type="text" id="field_id" placeholder="e.g. North Wheat Field">
-
-            <label>Time Period</label>
-            <div class="date-inputs">
-                <input type="date" id="start_date">
-                <span class="date-sep">to</span>
-                <input type="date" id="end_date">
+                <div class="about-section">
+                    <div class="about-section-title">Keyboard shortcuts</div>
+                    <p><kbd>Esc</kbd> Close popups &amp; cancel tools &middot; <kbd>L</kbd> Toggle layers panel &middot; <kbd>F</kbd> Recenter on field &middot; <kbd>D</kbd> Toggle dark mode &middot; <kbd>G</kbd> Start guided tour &middot; <kbd>?</kbd> Show this panel</p>
+                </div>
             </div>
+        </div>
+    </div>
 
-            <!-- Vegetation & Growth (Sentinel-2) -->
-            <div class="idx-group-header">
-                <label>Vegetation &amp; Growth</label>
-                <a href="#" class="select-all-link" onclick="toggleGroupIndices('s2', this); return false;">select all</a>
-            </div>
-            <div class="indices-grid" id="s2-indices">
-                <label class="cb-item" title="Vegetation greenness & overall crop health"><input type="checkbox" name="idx" value="NDVI" data-group="s2" checked><span>NDVI</span></label>
-                <label class="cb-item" title="Red-edge vegetation status"><input type="checkbox" name="idx" value="NDRE" data-group="s2"><span>NDRE</span></label>
-                <label class="cb-item" title="Green vegetation / chlorophyll"><input type="checkbox" name="idx" value="GNDVI" data-group="s2"><span>GNDVI</span></label>
-                <label class="cb-item" title="Enhanced vegetation (atmosphere corrected)"><input type="checkbox" name="idx" value="EVI" data-group="s2"><span>EVI</span></label>
-                <label class="cb-item" title="Vegetation adjusted for soil brightness"><input type="checkbox" name="idx" value="SAVI" data-group="s2"><span>SAVI</span></label>
-                <label class="cb-item" title="Chlorophyll content via red-edge"><input type="checkbox" name="idx" value="CIre" data-group="s2"><span>CI-re</span></label>
-                <label class="cb-item" title="Chlorophyll content (MERIS method)"><input type="checkbox" name="idx" value="MTCI" data-group="s2"><span>MTCI</span></label>
-                <label class="cb-item" title="Red-edge chlorophyll (4-band)"><input type="checkbox" name="idx" value="IRECI" data-group="s2"><span>IRECI</span></label>
-                <label class="cb-item" title="Leaf water / moisture content"><input type="checkbox" name="idx" value="NDMI" data-group="s2"><span>NDMI</span></label>
-                <label class="cb-item" title="Drought monitoring using dual SWIR"><input type="checkbox" name="idx" value="NMDI" data-group="s2"><span>NMDI</span></label>
-            </div>
+    <div class="sidebar-body">
 
-            <!-- Temperature & Drought (Landsat) -->
-            <div class="idx-group-header">
-                <label>Temperature &amp; Drought</label>
-                <a href="#" class="select-all-link" onclick="toggleGroupIndices('ls', this); return false;">select all</a>
-            </div>
-            <div class="indices-grid" id="ls-indices">
-                <label class="cb-item" title="Surface temperature from thermal infrared"><input type="checkbox" name="idx" value="LST" data-group="ls"><span>LST</span></label>
-                <label class="cb-item" title="Vegetation water supply proxy"><input type="checkbox" name="idx" value="VSWI" data-group="ls"><span>VSWI</span></label>
-                <label class="cb-item" title="Temperature-based soil/vegetation dryness"><input type="checkbox" name="idx" value="TVDI" data-group="ls"><span>TVDI</span></label>
-                <label class="cb-item" title="Temperature stress condition"><input type="checkbox" name="idx" value="TCI" data-group="ls"><span>TCI</span></label>
-                <label class="cb-item" title="Composite vegetation health score"><input type="checkbox" name="idx" value="VHI" data-group="ls"><span>VHI</span></label>
+        <div class="card" id="setup-card">
+            <h3><span class="section-num">1</span> Analysis Setup</h3>
+
+            <!-- SECTION: Field Identity -->
+            <div class="setup-section">
+                <div class="setup-section-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                    Field &amp; Time
+                </div>
+                <label>Field Name</label>
+                <div class="field-name-row">
+                    <input type="text" id="field_id" placeholder="e.g. Field_1">
+                    <button type="button" class="btn-saved-fields" id="btn-saved-fields" onclick="toggleSavedFields()" title="Recent fields">&#9776;</button>
+                </div>
+                <div id="saved-fields-dropdown" class="saved-fields-dropdown" style="display:none;"></div>
+
+                <label>Time Period</label>
+                <div class="date-inputs">
+                    <input type="date" id="start_date">
+                    <span class="date-sep">to</span>
+                    <input type="date" id="end_date">
+                </div>
             </div>
 
-            <label>Area of Interest <span class="label-hint">(GeoJSON polygon)</span></label>
-            <textarea id="geojson_input" class="geo-textarea" placeholder="Paste coordinates: [[[lon, lat], ...]]"></textarea>
+            <!-- SECTION: Indices Selection -->
+            <div class="setup-section">
+                <div class="setup-section-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 17 4-8 4 4 5-6"/></svg>
+                    Indices
+                </div>
+
+                <!-- Vegetation & Growth (Sentinel-2) -->
+                <div class="idx-group-header">
+                    <label>Vegetation &amp; Growth <span class="idx-sensor-tag">Sentinel-2</span></label>
+                    <a href="#" class="select-all-link" onclick="toggleGroupIndices('s2', this); return false;">select all</a>
+                </div>
+                <div class="indices-grid" id="s2-indices">
+                    <label class="cb-item" title="Vegetation greenness & overall crop health"><input type="checkbox" name="idx" value="NDVI" data-group="s2"><span>NDVI</span></label>
+                    <label class="cb-item" title="Red-edge vegetation status"><input type="checkbox" name="idx" value="NDRE" data-group="s2"><span>NDRE</span></label>
+                    <label class="cb-item" title="Green vegetation / chlorophyll"><input type="checkbox" name="idx" value="GNDVI" data-group="s2"><span>GNDVI</span></label>
+                    <label class="cb-item" title="Enhanced vegetation (atmosphere corrected)"><input type="checkbox" name="idx" value="EVI" data-group="s2"><span>EVI</span></label>
+                    <label class="cb-item" title="Vegetation adjusted for soil brightness"><input type="checkbox" name="idx" value="SAVI" data-group="s2"><span>SAVI</span></label>
+                    <label class="cb-item" title="Chlorophyll content via red-edge"><input type="checkbox" name="idx" value="CIre" data-group="s2"><span>CI-re</span></label>
+                    <label class="cb-item" title="Chlorophyll content (MERIS method)"><input type="checkbox" name="idx" value="MTCI" data-group="s2"><span>MTCI</span></label>
+                    <label class="cb-item" title="Red-edge chlorophyll (4-band)"><input type="checkbox" name="idx" value="IRECI" data-group="s2"><span>IRECI</span></label>
+                    <label class="cb-item" title="Leaf water / moisture content"><input type="checkbox" name="idx" value="NDMI" data-group="s2"><span>NDMI</span></label>
+                    <label class="cb-item" title="Drought monitoring using dual SWIR"><input type="checkbox" name="idx" value="NMDI" data-group="s2"><span>NMDI</span></label>
+                </div>
+
+                <!-- Temperature & Drought (Landsat) -->
+                <div class="idx-group-header">
+                    <label>Temperature &amp; Drought <span class="idx-sensor-tag ls">Landsat 8/9</span></label>
+                    <a href="#" class="select-all-link" onclick="toggleGroupIndices('ls', this); return false;">select all</a>
+                </div>
+                <div class="indices-grid" id="ls-indices">
+                    <label class="cb-item" title="Surface temperature from thermal infrared"><input type="checkbox" name="idx" value="LST" data-group="ls"><span>LST</span></label>
+                    <label class="cb-item" title="Vegetation water supply proxy"><input type="checkbox" name="idx" value="VSWI" data-group="ls"><span>VSWI</span></label>
+                    <label class="cb-item" title="Temperature-based soil/vegetation dryness"><input type="checkbox" name="idx" value="TVDI" data-group="ls"><span>TVDI</span></label>
+                    <label class="cb-item" title="Temperature stress condition"><input type="checkbox" name="idx" value="TCI" data-group="ls"><span>TCI</span></label>
+                    <label class="cb-item" title="Composite vegetation health score"><input type="checkbox" name="idx" value="VHI" data-group="ls"><span>VHI</span></label>
+                </div>
+            </div>
+
+            <!-- SECTION: Area of Interest -->
+            <div class="setup-section">
+                <div class="setup-section-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1,6 4,22 22,18 18,2"/></svg>
+                    Area of Interest
+                </div>
+
+                <!-- AOI method cards -->
+                <div class="aoi-methods" id="aoi-tabs">
+                    <button type="button" class="aoi-method active" data-tab="parcel" onclick="switchAoiTab('parcel')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                        <span>Parcel Search</span>
+                    </button>
+                    <button type="button" class="aoi-method" data-tab="mapclick" onclick="switchAoiTab('mapclick')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <span>Map Click</span>
+                    </button>
+                    <button type="button" class="aoi-method" data-tab="geojson" onclick="switchAoiTab('geojson')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                        <span>GeoJSON</span>
+                    </button>
+                </div>
+
+                <!-- Tab 1: Parcel Search -->
+                <div class="aoi-tab-content active" id="aoi-panel-parcel">
+                    <input type="text" id="parcel_query" placeholder="e.g. 141201_1.0001.6509 or Krzewina 134">
+                    <div class="parcel-hint">Enter a parcel ID (TERYT) or region name + parcel number</div>
+                    <button type="button" class="btn-parcel-search" id="btn-parcel-search" onclick="searchParcel()">
+                        <span id="btn-parcel-text">FIND PARCEL</span>
+                        <span id="btn-parcel-spinner" class="spinner" style="display:none;"></span>
+                    </button>
+                    <div id="parcel-info" class="parcel-info" style="display:none;"></div>
+                </div>
+
+                <!-- Tab 2: Map Click -->
+                <div class="aoi-tab-content" id="aoi-panel-mapclick">
+                    <p class="mapclick-desc">Click the button below, then click on the map to identify the cadastral parcel at that location.</p>
+                    <button type="button" class="btn-pick" id="btn-pick" onclick="toggleMapPick()">
+                        <span class="pick-icon">&#128205;</span>
+                        <span id="btn-pick-text">PICK FROM MAP</span>
+                    </button>
+                    <div id="pick-info" class="parcel-info" style="display:none;"></div>
+                </div>
+
+                <!-- Tab 3: GeoJSON -->
+                <div class="aoi-tab-content" id="aoi-panel-geojson">
+                    <textarea id="geojson_input" class="geo-textarea" placeholder="Paste coordinates: [[[lon, lat], ...]]"></textarea>
+                    <button type="button" class="btn-outline btn-apply-geojson" onclick="applyGeoJSON()">APPLY GEOJSON</button>
+                </div>
+
+                <!-- AOI confirmation + edit button -->
+                <div id="aoi-status" class="aoi-status" style="display:none;"></div>
+                <button type="button" class="btn-outline btn-edit-aoi" id="btn-edit-aoi" onclick="startEditAOI()" style="display:none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    EDIT BOUNDARY
+                </button>
+            </div>
 
             <button class="btn-primary" id="btn-search" onclick="startAnalysis()">
                 <span id="btn-search-text">SEARCH FOR IMAGES</span>
@@ -120,14 +211,18 @@
             <h3><span class="section-num">2</span> Results Overview</h3>
 
             <div id="summary-panel"></div>
+
+            <!-- Chart popup toggle -->
+            <button type="button" class="btn-chart-toggle" id="btn-chart-toggle" onclick="toggleChartPopup()" style="display:none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 17 4-8 4 4 5-6"/></svg>
+                <span id="btn-chart-text">SHOW TIME SERIES CHART</span>
+            </button>
+
             <div id="warnings-panel"></div>
 
             <label style="margin-top:4px;">Available Observation Dates</label>
             <div id="dates-container"></div>
 
-            <div class="action-row">
-                <button class="btn-outline" onclick="zoomToAOI()">RECENTER ON FIELD</button>
-            </div>
             <button class="btn-secondary" id="btn-load" onclick="loadSelectedLayers()">
                 <span id="btn-load-text">VISUALIZE ON MAP</span>
                 <span id="btn-load-spinner" class="spinner" style="display:none;"></span>
@@ -136,12 +231,121 @@
 
         <div id="status">
             <span id="status-text">Ready to start.</span>
+            <div id="progress-bar" class="progress-bar" style="display:none;">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
         </div>
 
     </div>
 </div>
 
 <div id="map">
+
+    <!-- Sidebar toggle (desktop) -->
+    <button type="button" class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+
+    <!-- Mobile menu button -->
+    <button type="button" class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleMobileSidebar()">&#9776;</button>
+
+    <!-- Map tools toolbar -->
+    <div class="map-tools" id="map-tools">
+        <button type="button" class="map-tool-btn" id="btn-measure-dist" onclick="toggleMeasure('distance')" title="Measure distance">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18L18 2"/><path d="M7.5 12.5l2-2"/><path d="M12.5 7.5l2-2"/><circle cx="2" cy="18" r="1.5" fill="currentColor" stroke="none"/><circle cx="18" cy="2" r="1.5" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button type="button" class="map-tool-btn" id="btn-measure-area" onclick="toggleMeasure('area')" title="Measure area">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" opacity="0.18"><polygon points="4,4 20,6 18,20 2,16"/></svg><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute"><polygon points="4,4 20,6 18,20 2,16" fill="none"/><circle cx="4" cy="4" r="1.5" fill="currentColor" stroke="none"/><circle cx="20" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="18" cy="20" r="1.5" fill="currentColor" stroke="none"/><circle cx="2" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button type="button" class="map-tool-btn" id="btn-pixel-inspect" onclick="togglePixelInspector()" title="Inspect pixel values">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        </button>
+        <button type="button" class="map-tool-btn" id="btn-recenter" onclick="zoomToAOI()" title="Recenter on field" style="display:none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/></svg>
+        </button>
+    </div>
+
+    <!-- Custom Layers Panel -->
+    <div id="layers-panel" class="layers-panel">
+        <div class="lp-header" onclick="toggleLayersPanel()">
+            <span class="lp-icon">&#9776;</span>
+            <span class="lp-title">Layers</span>
+            <span id="lp-count" class="lp-count" style="display:none;">0</span>
+            <span class="lp-chevron"></span>
+        </div>
+        <div class="lp-body" id="lp-body">
+            <!-- Base maps -->
+            <div class="lp-section">
+                <div class="lp-section-label">Base Map</div>
+                <label class="lp-radio">
+                    <input type="radio" name="basemap" value="satellite" checked onchange="switchBaseMap('satellite')">
+                    <span class="lp-radio-mark"></span>
+                    <span>Satellite</span>
+                </label>
+                <label class="lp-radio">
+                    <input type="radio" name="basemap" value="osm" onchange="switchBaseMap('osm')">
+                    <span class="lp-radio-mark"></span>
+                    <span>Street Map (OSM)</span>
+                </label>
+            </div>
+
+            <!-- Reference layers -->
+            <div class="lp-section">
+                <div class="lp-section-label">Reference</div>
+                <label class="lp-toggle-row">
+                    <input type="checkbox" id="cb-cadastral" onchange="toggleCadastral(this.checked)">
+                    <span class="lp-cb-mark"></span>
+                    <span class="lp-toggle-label">
+                        <span class="lp-toggle-name">Cadastral Parcels</span>
+                        <span class="lp-toggle-hint">Boundaries + numbers (GUGiK)</span>
+                    </span>
+                </label>
+            </div>
+
+            <!-- Overlays (populated by JS) -->
+            <div class="lp-section" id="lp-overlays-section" style="display:none;">
+                <div class="lp-section-header">
+                    <span class="lp-section-label">Overlays</span>
+                    <button type="button" class="lp-clear-btn" onclick="clearAllOverlays()">Clear all</button>
+                </div>
+                <div id="lp-overlays"></div>
+            </div>
+
+            <!-- Opacity slider -->
+            <div class="lp-section" id="lp-opacity-section" style="display:none;">
+                <div class="lp-section-label">Opacity</div>
+                <div class="lp-opacity-row">
+                    <input type="range" id="lp-opacity" class="lp-slider" min="0" max="100" value="100" oninput="setOverlayOpacity(this.value)">
+                    <span id="lp-opacity-val" class="lp-opacity-val">100%</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Floating Chart Popup -->
+    <div id="chart-popup" class="chart-popup" style="display:none;">
+        <div class="chart-popup-header">
+            <div class="chart-popup-title-row">
+                <span class="chart-popup-icon">&#128200;</span>
+                <span class="chart-popup-title">Time Series</span>
+                <span class="chart-popup-sub" id="chart-popup-sub"></span>
+            </div>
+            <button type="button" class="chart-popup-close" onclick="toggleChartPopup()" title="Close">&times;</button>
+        </div>
+        <div class="chart-popup-tabs" id="chart-popup-tabs"></div>
+        <div class="chart-popup-body">
+            <canvas id="chart-popup-canvas"></canvas>
+        </div>
+    </div>
+
+    <!-- Coordinate display -->
+    <div id="coord-display" class="coord-display">
+        <span id="coord-text">Lat: &mdash;, Lng: &mdash; | Zoom: 6</span>
+        <button type="button" class="coord-copy-btn" onclick="copyCoords()" title="Copy coordinates">&#128203;</button>
+    </div>
+
+    <!-- Legend panel -->
     <div id="legend-panel">
         <div id="legend-tabs"></div>
         <div id="leg-content">
@@ -156,7 +360,10 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js"></script>
 <script src="/static/script.js"></script>
 
 </body>

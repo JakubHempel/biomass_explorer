@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles, StaticFiles 
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ import services
 import schemas
 import database
 import models
+import uldk
 
 # 1. Creating table in the database
 models.Base.metadata.create_all(bind=database.engine)
@@ -29,6 +30,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("static/favicon.png", media_type="image/png")
 
 # --- API Endpoints ---
 
@@ -58,6 +63,76 @@ async def get_map_layer(request: schemas.AnalysisRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/visualize/batch", response_model=schemas.BatchLayerResponse)
+async def get_batch_layers(request: schemas.BatchLayerRequest):
+    """Generate tile URLs for ALL indices on a single date in one call.
+
+    The collection is filtered / mosaicked ONCE and getMapId calls are
+    parallelised with a thread pool, making this dramatically faster than
+    calling /visualize/map N times.
+    """
+    try:
+        result = services.generate_tile_urls_batch(
+            date=request.date,
+            sensor=request.sensor,
+            indices=request.indices,
+            geojson=request.geojson,
+            cloud_cover=request.cloud_cover,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Pixel Inspector ---
+
+@app.post("/api/pixel-value", response_model=schemas.PixelQueryResponse)
+async def pixel_value(request: schemas.PixelQueryRequest):
+    """Sample index values at a single lat/lng for a given date/sensor."""
+    try:
+        result = services.query_pixel_value(
+            lat=request.lat,
+            lng=request.lng,
+            date=request.date,
+            sensor=request.sensor,
+            indices=request.indices,
+            geojson=request.geojson,
+            cloud_cover=request.cloud_cover,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- ULDK Parcel Lookup ---
+
+@app.get("/api/uldk/search")
+async def uldk_search(q: str = Query(..., description="Parcel ID or region name + number")):
+    """Proxy search to ULDK GetParcelByIdOrNr."""
+    try:
+        result = uldk.search_parcel(q)
+        if result["count"] == 0:
+            raise HTTPException(status_code=404, detail="No parcel found for the given query.")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ULDK service error: {e}")
+
+@app.get("/api/uldk/locate")
+async def uldk_locate(lat: float = Query(...), lng: float = Query(...)):
+    """Proxy coordinate lookup to ULDK GetParcelByXY."""
+    try:
+        print(f"[ULDK locate] lat={lat}, lng={lng}")
+        result = uldk.locate_parcel(lat, lng)
+        if result["count"] == 0:
+            raise HTTPException(status_code=404, detail="No parcel found at the given location.")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ULDK locate] Error: {e}")
+        raise HTTPException(status_code=502, detail=f"ULDK service error: {e}")
 
 # --- Static Files & Frontend Route ---
 

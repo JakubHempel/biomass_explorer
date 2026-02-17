@@ -6,12 +6,40 @@
 
 ## Key Features
 
+### Satellite Analysis
 - **15 spectral & thermal indices** from two satellite platforms (see tables below).
 - **Dual-satellite pipeline** — optical indices from Sentinel-2 (~5-day revisit, 10 m) and thermal/drought indices from Landsat 8/9 (~8-day revisit, 30 m), processed independently and grouped by sensor.
 - **Cloud-aware filtering** — per-pixel SCL-based cloud mask for Sentinel-2 and QA_PIXEL mask for Landsat, with an 80 % clear-pixel threshold over the AOI.
 - **Period summary with condition ratings** — mean index values are evaluated against crop-science thresholds and labelled Excellent / Good / Fair / Poor / Critical.
-- **Interactive map** — Leaflet-based dashboard with live tile overlays from GEE, layer control, minimap, colour-gradient legend with formulas, and satellite / street base maps.
-- **SQLite persistence** — every analysis run is saved to a local database, queryable by field ID.
+
+### Interactive Map & Tools
+- **Leaflet-based dashboard** with live tile overlays from GEE, layer control, minimap, and colour-gradient legend with formulas.
+- **Location search** — Nominatim/OSM geocoder for finding places on the map.
+- **Measurement tools** — measure distances and areas directly on the map.
+- **Pixel inspector** — click any point on the map to query index values at that pixel.
+- **Coordinate display** — live lat/lng and zoom level shown at the bottom of the map.
+- **Recenter on field** — quick-access button in the map toolbar to zoom back to your AOI.
+
+### Area of Interest
+- **Parcel Search** — find parcels by TERYT cadastral ID or region name + parcel number (Polish cadastral system via ULDK/GUGiK).
+- **Map Click** — click directly on the map to identify and load a cadastral parcel.
+- **GeoJSON** — paste custom polygon coordinates.
+- **Boundary editing** — after loading any AOI, edit the polygon vertices directly on the map (double-click or press Escape to confirm).
+- **Saved fields** — recently used fields are stored in the browser and can be reloaded instantly with their geometry.
+
+### UI/UX
+- **Dark / Light mode** — toggle with the header button or press `D`.
+- **Collapsible sidebar** — toggle the sidebar to maximise map space.
+- **Skeleton loading** — placeholder animations shown during data fetching.
+- **Mobile responsive** — collapsible sidebar with hamburger menu for smaller screens.
+- **Guided onboarding tour** — step-by-step walkthrough on first visit; replay anytime with `G`.
+- **Time series chart** — interactive Chart.js line chart for all computed indices across observation dates.
+- **Keyboard shortcuts** — `Esc` cancel tools, `L` layers, `F` recenter, `D` dark mode, `G` guide tour, `?` about panel.
+
+### Backend & Storage
+- **FastAPI** backend with async endpoints.
+- **SQLite persistence** — every analysis run is saved locally, queryable by field ID.
+- **ULDK integration** — Polish cadastral parcel lookup via the ULDK (GUGiK) web service.
 
 ---
 
@@ -48,17 +76,19 @@
 
 ```
 biomass_explorer/
-├── main.py            # FastAPI app, endpoints, static file serving
-├── services.py        # GEE processing: S2 + Landsat pipelines, tile URL generation
-├── models.py          # SQLAlchemy model (measurements table with sensor column)
-├── schemas.py         # Pydantic request/response schemas
-├── database.py        # SQLite engine & session factory
-├── requirements.txt   # Python dependencies
-├── .env               # GEE_PROJECT_ID (not committed)
+├── main.py              # FastAPI app, endpoints, favicon, static file serving
+├── services.py          # GEE processing: S2 + Landsat pipelines, tile URLs, pixel queries
+├── models.py            # SQLAlchemy model (measurements table with sensor column)
+├── schemas.py           # Pydantic request/response schemas (incl. pixel inspector)
+├── database.py          # SQLite engine & session factory
+├── uldk.py              # Polish cadastral (ULDK/GUGiK) parcel lookup service
+├── requirements.txt     # Python dependencies
+├── .env                 # GEE_PROJECT_ID (not committed)
 └── static/
-    ├── index.html     # Sidebar UI, collapsible about panel, map container
-    ├── script.js      # Analysis logic, summary panel, condition evaluation, legend
-    └── style.css      # Design system (fonts, cards, stat tiles, glass legend)
+    ├── index.html       # Sidebar UI, setup sections, map container, tools
+    ├── script.js        # Analysis logic, map tools, geocoder, dark mode, onboarding
+    ├── style.css        # Design system, dark mode, responsive layout
+    └── favicon.png      # App icon (globe + leaf)
 ```
 
 ---
@@ -106,8 +136,25 @@ biomass_explorer/
 |:-------|:-----|:------------|
 | `POST` | `/calculate/biomass` | Run analysis — computes selected indices, saves to DB, returns timeseries + summary |
 | `POST` | `/visualize/map` | Generate GEE tile URL for a single index + date |
+| `POST` | `/api/pixel-value` | Sample index values at a specific lat/lng for a given date/sensor |
+| `GET`  | `/api/uldk/parcel` | Look up a cadastral parcel by TERYT ID or region name |
+| `GET`  | `/api/uldk/point` | Identify the cadastral parcel at a given lat/lng coordinate |
 | `GET`  | `/history/{field_id}` | Retrieve all stored measurements for a field |
+| `GET`  | `/favicon.ico` | Serve the app favicon |
 | `GET`  | `/` | Serve the frontend |
+
+---
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|:----|:-------|
+| `Esc` | Close popups & cancel active tools |
+| `L` | Toggle layers panel |
+| `F` | Recenter map on field |
+| `D` | Toggle dark / light mode |
+| `G` | Start guided onboarding tour |
+| `?` | Open the About panel |
 
 ---
 
@@ -127,6 +174,19 @@ The `measurements` table stores one row per **(field, date, sensor)** combinatio
 Unique constraint: `(field_id, date, sensor)`.
 
 > **Note:** After schema changes (e.g. pulling an update that adds columns), delete `biomass_results.db` and restart the server — the table will be recreated automatically.
+
+---
+
+## Third-Party Libraries (Frontend)
+
+| Library | Purpose |
+|:--------|:--------|
+| [Leaflet](https://leafletjs.com/) | Interactive map |
+| [Leaflet MiniMap](https://github.com/Norkart/Leaflet-MiniMap) | Overview minimap |
+| [Leaflet Control Geocoder](https://github.com/perliedman/leaflet-control-geocoder) | Location search (Nominatim) |
+| [Leaflet Draw](https://github.com/Leaflet/Leaflet.draw) | Polygon boundary editing |
+| [Chart.js](https://www.chartjs.org/) | Time series charts |
+| [Driver.js](https://driverjs.com/) | Onboarding guided tour |
 
 ---
 

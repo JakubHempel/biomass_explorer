@@ -1,10 +1,15 @@
 import ee
 import statistics
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from schemas import AnalysisRequest, BiomassResponse
 from sqlalchemy.orm import Session
 import models
 import os
+import time
+import logging
 from dotenv import load_dotenv
+
+log = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -91,202 +96,293 @@ def _apply_landsat_scale(image):
 
 
 # ===========================================================================
-#  Main analysis logic
+#  Per-date processing helpers (called from thread pool)
+# ===========================================================================
+
+def _process_s2_date(s2_col, date_str, requested_s2, region):
+    """Process a single Sentinel-2 date: mosaic → indices → stats.
+
+    Returns dict {"date", "sensor", "values"} or None if cloudy/empty.
+    Uses a SINGLE getInfo() call per date (combined clear-check + stats).
+    """
+    day_start = ee.Date(date_str)
+    day_end = day_start.advance(1, 'day')
+    dm = s2_col.filterDate(day_start, day_end).mosaic()
+
+    imgs, valid = [], []
+
+    if 'NDVI' in requested_s2:
+        imgs.append(dm.normalizedDifference(['B8', 'B4']).rename('NDVI')); valid.append('NDVI')
+    if 'NDRE' in requested_s2:
+        imgs.append(dm.normalizedDifference(['B8', 'B5']).rename('NDRE')); valid.append('NDRE')
+    if 'GNDVI' in requested_s2:
+        imgs.append(dm.normalizedDifference(['B8', 'B3']).rename('GNDVI')); valid.append('GNDVI')
+    if 'EVI' in requested_s2:
+        imgs.append(dm.expression(
+            '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 10000))',
+            {'NIR': dm.select('B8'), 'RED': dm.select('B4'), 'BLUE': dm.select('B2')}
+        ).rename('EVI')); valid.append('EVI')
+    if 'SAVI' in requested_s2:
+        imgs.append(dm.expression(
+            '((NIR - RED) / (NIR + RED + 5000)) * 1.5',
+            {'NIR': dm.select('B8'), 'RED': dm.select('B4')}
+        ).rename('SAVI')); valid.append('SAVI')
+    if 'CIre' in requested_s2:
+        imgs.append(dm.expression('(RE3 / RE1) - 1',
+            {'RE3': dm.select('B7'), 'RE1': dm.select('B5')}
+        ).rename('CIre')); valid.append('CIre')
+    if 'MTCI' in requested_s2:
+        imgs.append(dm.expression('(RE2 - RE1) / (RE1 - RED)',
+            {'RE2': dm.select('B6'), 'RE1': dm.select('B5'), 'RED': dm.select('B4')}
+        ).rename('MTCI')); valid.append('MTCI')
+    if 'IRECI' in requested_s2:
+        imgs.append(dm.expression('(RE3 - RED) * RE2 / (RE1 * 10000)',
+            {'RE3': dm.select('B7'), 'RED': dm.select('B4'),
+             'RE1': dm.select('B5'), 'RE2': dm.select('B6')}
+        ).rename('IRECI')); valid.append('IRECI')
+    if 'NDMI' in requested_s2:
+        imgs.append(dm.normalizedDifference(['B8', 'B11']).rename('NDMI')); valid.append('NDMI')
+    if 'NMDI' in requested_s2:
+        imgs.append(dm.expression(
+            '(NIR - (SWIR1 - SWIR2)) / (NIR + (SWIR1 - SWIR2))',
+            {'NIR': dm.select('B8'), 'SWIR1': dm.select('B11'), 'SWIR2': dm.select('B12')}
+        ).rename('NMDI')); valid.append('NMDI')
+
+    if not imgs:
+        return None
+
+    # Add clear-fraction band: mean of binary mask = fraction of clear pixels
+    # unmask(0) ensures masked (cloudy) pixels contribute 0 to the average
+    clear_band = dm.select('B8').mask().unmask(0).rename('clear_frac')
+    combined = ee.Image.cat(imgs).addBands(clear_band)
+
+    try:
+        stats = combined.reduceRegion(
+            reducer=ee.Reducer.mean(), geometry=region, scale=10, maxPixels=1e9
+        ).getInfo()
+    except Exception as exc:
+        log.warning("S2 reduceRegion failed for %s: %s", date_str, exc)
+        return None
+
+    # Check clear-pixel ratio
+    clear_frac = stats.get('clear_frac', 0) or 0
+    if clear_frac < MIN_CLEAR_RATIO:
+        return None
+
+    day_vals = {}
+    for idx in valid:
+        v = stats.get(idx)
+        if v is not None:
+            day_vals[idx] = round(v, 4)
+    return {"date": date_str, "sensor": "Sentinel-2", "values": day_vals} if day_vals else None
+
+
+def _process_ls_date(ls_col, date_str, requested_landsat, region):
+    """Process a single Landsat date: mosaic → indices → stats.
+
+    Returns dict {"date", "sensor", "values"} or None if cloudy/empty.
+    Uses a SINGLE getInfo() call per date. The minMax reduceRegion for
+    TVDI/TCI/VHI is kept lazy (ee.Dictionary → ee.Number) and resolved
+    within the same computation graph.
+    """
+    day_start = ee.Date(date_str)
+    day_end = day_start.advance(1, 'day')
+    dm = ls_col.filterDate(day_start, day_end).mosaic()
+
+    ndvi_l = dm.normalizedDifference(['SR_B5', 'SR_B4']).rename('ndvi_l')
+    lst_c  = dm.select('ST_B10').subtract(273.15).rename('lst_c')
+
+    imgs, valid = [], []
+
+    if 'LST' in requested_landsat:
+        imgs.append(lst_c.rename('LST')); valid.append('LST')
+    if 'VSWI' in requested_landsat:
+        imgs.append(ndvi_l.divide(lst_c).rename('VSWI')); valid.append('VSWI')
+
+    needs_mm = any(i in requested_landsat for i in ('TVDI', 'TCI', 'VHI'))
+    if needs_mm:
+        # Lazy ee.Dictionary — resolved as part of the final getInfo() graph
+        mm = ee.Image.cat([ndvi_l, lst_c]).reduceRegion(
+            reducer=ee.Reducer.minMax(), geometry=region, scale=30, maxPixels=1e9)
+        ndvi_min = ee.Number(mm.get('ndvi_l_min'))
+        ndvi_max = ee.Number(mm.get('ndvi_l_max'))
+        lst_min  = ee.Number(mm.get('lst_c_min'))
+        lst_max  = ee.Number(mm.get('lst_c_max'))
+        ndvi_rng = ndvi_max.subtract(ndvi_min).max(0.001)
+        lst_rng  = lst_max.subtract(lst_min).max(0.001)
+
+        if 'TVDI' in requested_landsat:
+            imgs.append(lst_c.subtract(lst_min).divide(lst_rng).rename('TVDI'))
+            valid.append('TVDI')
+        if 'TCI' in requested_landsat:
+            imgs.append(ee.Image.constant(lst_max).subtract(lst_c)
+                        .divide(lst_rng).multiply(100).rename('TCI'))
+            valid.append('TCI')
+        if 'VHI' in requested_landsat:
+            vci = ndvi_l.subtract(ndvi_min).divide(ndvi_rng).multiply(100)
+            tci = ee.Image.constant(lst_max).subtract(lst_c).divide(lst_rng).multiply(100)
+            imgs.append(vci.multiply(0.5).add(tci.multiply(0.5)).rename('VHI'))
+            valid.append('VHI')
+
+    if not imgs:
+        return None
+
+    clear_band = dm.select('SR_B5').mask().unmask(0).rename('clear_frac')
+    combined = ee.Image.cat(imgs).addBands(clear_band)
+
+    try:
+        stats = combined.reduceRegion(
+            reducer=ee.Reducer.mean(), geometry=region, scale=30, maxPixels=1e9
+        ).getInfo()
+    except Exception as exc:
+        log.warning("Landsat reduceRegion failed for %s: %s", date_str, exc)
+        return None
+
+    clear_frac = stats.get('clear_frac', 0) or 0
+    if clear_frac < MIN_CLEAR_RATIO:
+        return None
+
+    day_vals = {}
+    for idx in valid:
+        v = stats.get(idx)
+        if v is not None:
+            day_vals[idx] = round(v, 4)
+    return {"date": date_str, "sensor": "Landsat 8/9", "values": day_vals} if day_vals else None
+
+
+# Max concurrent GEE requests per analysis (stay within GEE rate limits)
+_MAX_GEE_WORKERS = 6
+
+
+# ===========================================================================
+#  Main analysis logic  (optimised: threaded dates, single getInfo per date)
 # ===========================================================================
 def calculate_biomass_logic(request: AnalysisRequest) -> dict:
+    t0 = time.time()
     region = ee.Geometry(request.geojson)
 
     requested_s2 = [i for i in request.indices if i in S2_INDICES]
     requested_landsat = [i for i in request.indices if i in LANDSAT_INDICES]
 
-    timeseries_results = []          # list of {"date": ..., "values": {...}}
-    all_values_flat = {idx: [] for idx in request.indices}
-
     # -------------------------------------------------------------------
-    #  A) Sentinel-2 processing
+    #  Phase 1: Discover available dates  (S2 + Landsat in parallel)
     # -------------------------------------------------------------------
-    if requested_s2:
-        s2_col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-                  .filterBounds(region)
-                  .filterDate(request.start_date, request.end_date)
-                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', request.cloud_cover))
-                  .map(_mask_s2_clouds))
+    s2_dates, ls_dates = [], []
 
-        s2_dates = (s2_col
-                    .map(lambda img: ee.Feature(None, {'date': img.date().format('YYYY-MM-dd')}))
-                    .aggregate_array('date').distinct().getInfo())
+    def _fetch_s2_dates():
+        if not requested_s2:
+            return
+        col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+               .filterBounds(region)
+               .filterDate(request.start_date, request.end_date)
+               .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', request.cloud_cover))
+               .map(_mask_s2_clouds))
+        dates = (col.map(lambda img: ee.Feature(None, {'date': img.date().format('YYYY-MM-dd')}))
+                 .aggregate_array('date').distinct().getInfo())
+        return col, dates
 
-        for date_str in s2_dates:
-            day_start = ee.Date(date_str)
-            day_end = day_start.advance(1, 'day')
-            day_col = s2_col.filterDate(day_start, day_end)
-            if day_col.size().getInfo() == 0:
-                continue
-
-            dm = day_col.mosaic()
-
-            # --- AOI-level cloud check: skip if <80% pixels are clear ---
-            clear_ratio = _aoi_clear_ratio(dm, 'B8', region, scale=10)
-            if clear_ratio < MIN_CLEAR_RATIO:
-                continue
-
-            imgs, valid = [], []
-
-            if 'NDVI' in requested_s2:
-                imgs.append(dm.normalizedDifference(['B8', 'B4']).rename('NDVI')); valid.append('NDVI')
-            if 'NDRE' in requested_s2:
-                imgs.append(dm.normalizedDifference(['B8', 'B5']).rename('NDRE')); valid.append('NDRE')
-            if 'GNDVI' in requested_s2:
-                imgs.append(dm.normalizedDifference(['B8', 'B3']).rename('GNDVI')); valid.append('GNDVI')
-            if 'EVI' in requested_s2:
-                imgs.append(dm.expression(
-                    '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 10000))',
-                    {'NIR': dm.select('B8'), 'RED': dm.select('B4'), 'BLUE': dm.select('B2')}
-                ).rename('EVI')); valid.append('EVI')
-            if 'SAVI' in requested_s2:
-                imgs.append(dm.expression(
-                    '((NIR - RED) / (NIR + RED + 5000)) * 1.5',
-                    {'NIR': dm.select('B8'), 'RED': dm.select('B4')}
-                ).rename('SAVI')); valid.append('SAVI')
-            if 'CIre' in requested_s2:
-                imgs.append(dm.expression(
-                    '(RE3 / RE1) - 1',
-                    {'RE3': dm.select('B7'), 'RE1': dm.select('B5')}
-                ).rename('CIre')); valid.append('CIre')
-            if 'MTCI' in requested_s2:
-                imgs.append(dm.expression(
-                    '(RE2 - RE1) / (RE1 - RED)',
-                    {'RE2': dm.select('B6'), 'RE1': dm.select('B5'), 'RED': dm.select('B4')}
-                ).rename('MTCI')); valid.append('MTCI')
-            if 'IRECI' in requested_s2:
-                imgs.append(dm.expression(
-                    '(RE3 - RED) * RE2 / (RE1 * 10000)',
-                    {'RE3': dm.select('B7'), 'RED': dm.select('B4'), 'RE1': dm.select('B5'), 'RE2': dm.select('B6')}
-                ).rename('IRECI')); valid.append('IRECI')
-            if 'NDMI' in requested_s2:
-                imgs.append(dm.normalizedDifference(['B8', 'B11']).rename('NDMI')); valid.append('NDMI')
-            if 'NMDI' in requested_s2:
-                imgs.append(dm.expression(
-                    '(NIR - (SWIR1 - SWIR2)) / (NIR + (SWIR1 - SWIR2))',
-                    {'NIR': dm.select('B8'), 'SWIR1': dm.select('B11'), 'SWIR2': dm.select('B12')}
-                ).rename('NMDI')); valid.append('NMDI')
-
-            if not imgs:
-                continue
-
-            try:
-                stats = ee.Image.cat(imgs).reduceRegion(
-                    reducer=ee.Reducer.mean(), geometry=region, scale=10, maxPixels=1e9
-                ).getInfo()
-            except Exception:
-                continue
-
-            day_vals, has = {}, False
-            for idx in valid:
-                v = stats.get(idx)
-                if v is not None:
-                    day_vals[idx] = round(v, 4); all_values_flat[idx].append(day_vals[idx]); has = True
-            if has:
-                timeseries_results.append({"date": date_str, "sensor": "Sentinel-2", "values": day_vals})
-
-    # -------------------------------------------------------------------
-    #  B) Landsat 8/9 processing  (thermal + drought indices)
-    # -------------------------------------------------------------------
-    if requested_landsat:
+    def _fetch_ls_dates():
+        if not requested_landsat:
+            return
         l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
         l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
-        ls_col = (l8.merge(l9)
-                  .filterBounds(region)
-                  .filterDate(request.start_date, request.end_date)
-                  .filter(ee.Filter.lt('CLOUD_COVER', request.cloud_cover))
-                  .map(_mask_landsat_clouds)
-                  .map(_apply_landsat_scale))
+        col = (l8.merge(l9)
+               .filterBounds(region)
+               .filterDate(request.start_date, request.end_date)
+               .filter(ee.Filter.lt('CLOUD_COVER', request.cloud_cover))
+               .map(_mask_landsat_clouds).map(_apply_landsat_scale))
+        dates = (col.map(lambda img: ee.Feature(None, {'date': img.date().format('YYYY-MM-dd')}))
+                 .aggregate_array('date').distinct().getInfo())
+        return col, dates
 
-        ls_dates = (ls_col
-                    .map(lambda img: ee.Feature(None, {'date': img.date().format('YYYY-MM-dd')}))
-                    .aggregate_array('date').distinct().getInfo())
+    s2_col = ls_col = None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_s2 = pool.submit(_fetch_s2_dates) if requested_s2 else None
+        fut_ls = pool.submit(_fetch_ls_dates) if requested_landsat else None
+        if fut_s2:
+            result = fut_s2.result()
+            if result:
+                s2_col, s2_dates = result
+        if fut_ls:
+            result = fut_ls.result()
+            if result:
+                ls_col, ls_dates = result
 
-        for date_str in ls_dates:
-            day_start = ee.Date(date_str)
-            day_end = day_start.advance(1, 'day')
-            day_col = ls_col.filterDate(day_start, day_end)
-            if day_col.size().getInfo() == 0:
-                continue
-
-            dm = day_col.mosaic()
-
-            # --- AOI-level cloud check: skip if <80% pixels are clear ---
-            clear_ratio = _aoi_clear_ratio(dm, 'SR_B5', region, scale=30)
-            if clear_ratio < MIN_CLEAR_RATIO:
-                continue
-
-            ndvi_l = dm.normalizedDifference(['SR_B5', 'SR_B4']).rename('ndvi_l')
-            lst_c = dm.select('ST_B10').subtract(273.15).rename('lst_c')
-
-            imgs, valid = [], []
-
-            if 'LST' in requested_landsat:
-                imgs.append(lst_c.rename('LST')); valid.append('LST')
-            if 'VSWI' in requested_landsat:
-                imgs.append(ndvi_l.divide(lst_c).rename('VSWI')); valid.append('VSWI')
-
-            # TCI / VHI / TVDI need region-level min/max (computed server-side)
-            needs_mm = any(i in requested_landsat for i in ('TVDI', 'TCI', 'VHI'))
-            if needs_mm:
-                mm = ee.Image.cat([ndvi_l, lst_c]).reduceRegion(
-                    reducer=ee.Reducer.minMax(), geometry=region, scale=30, maxPixels=1e9)
-                ndvi_min = ee.Number(mm.get('ndvi_l_min'))
-                ndvi_max = ee.Number(mm.get('ndvi_l_max'))
-                lst_min  = ee.Number(mm.get('lst_c_min'))
-                lst_max  = ee.Number(mm.get('lst_c_max'))
-                ndvi_rng = ndvi_max.subtract(ndvi_min).max(0.001)
-                lst_rng  = lst_max.subtract(lst_min).max(0.001)
-
-                if 'TVDI' in requested_landsat:
-                    imgs.append(lst_c.subtract(lst_min).divide(lst_rng).rename('TVDI'))
-                    valid.append('TVDI')
-                if 'TCI' in requested_landsat:
-                    imgs.append(ee.Image.constant(lst_max).subtract(lst_c)
-                                .divide(lst_rng).multiply(100).rename('TCI'))
-                    valid.append('TCI')
-                if 'VHI' in requested_landsat:
-                    vci = ndvi_l.subtract(ndvi_min).divide(ndvi_rng).multiply(100)
-                    tci = ee.Image.constant(lst_max).subtract(lst_c).divide(lst_rng).multiply(100)
-                    imgs.append(vci.multiply(0.5).add(tci.multiply(0.5)).rename('VHI'))
-                    valid.append('VHI')
-
-            if not imgs:
-                continue
-
-            try:
-                stats = ee.Image.cat(imgs).reduceRegion(
-                    reducer=ee.Reducer.mean(), geometry=region, scale=30, maxPixels=1e9
-                ).getInfo()
-            except Exception:
-                continue
-
-            day_vals, has = {}, False
-            for idx in valid:
-                v = stats.get(idx)
-                if v is not None:
-                    day_vals[idx] = round(v, 4); all_values_flat[idx].append(day_vals[idx]); has = True
-            if has:
-                timeseries_results.append({"date": date_str, "sensor": "Landsat 8/9", "values": day_vals})
+    t_dates = time.time()
+    log.info("Date discovery: S2=%d, Landsat=%d dates in %.1fs",
+             len(s2_dates), len(ls_dates), t_dates - t0)
 
     # -------------------------------------------------------------------
-    #  Summary
+    #  Phase 2: Process all dates in parallel  (single getInfo per date)
+    # -------------------------------------------------------------------
+    timeseries_results = []
+    all_values_flat = {idx: [] for idx in request.indices}
+
+    futures = []
+    with ThreadPoolExecutor(max_workers=_MAX_GEE_WORKERS) as pool:
+        for d in s2_dates:
+            futures.append(pool.submit(_process_s2_date, s2_col, d, requested_s2, region))
+        for d in ls_dates:
+            futures.append(pool.submit(_process_ls_date, ls_col, d, requested_landsat, region))
+
+        for fut in as_completed(futures):
+            try:
+                result = fut.result()
+            except Exception as exc:
+                log.warning("Date processing failed: %s", exc)
+                continue
+            if result is None:
+                continue
+            timeseries_results.append(result)
+            for idx, v in result['values'].items():
+                all_values_flat[idx].append(v)
+
+    # -------------------------------------------------------------------
+    #  Summary  (mean for backwards compat + richer stats)
     # -------------------------------------------------------------------
     timeseries_results.sort(key=lambda x: x['date'])
     summary_stats = {}
+    period_stats = {}
     for idx in request.indices:
         vals = all_values_flat.get(idx, [])
-        summary_stats[idx] = round(statistics.mean(vals), 4) if vals else None
+        if vals:
+            vals_sorted = sorted(vals)
+            n = len(vals_sorted)
+            mean_val = statistics.mean(vals)
+            summary_stats[idx] = round(mean_val, 4)
+
+            def _percentile(data, p):
+                k = (len(data) - 1) * p / 100
+                f = int(k)
+                c = f + 1 if f + 1 < len(data) else f
+                return data[f] + (k - f) * (data[c] - data[f])
+
+            period_stats[idx] = {
+                "mean": round(mean_val, 4),
+                "min": round(vals_sorted[0], 4),
+                "max": round(vals_sorted[-1], 4),
+                "std_dev": round(statistics.stdev(vals), 4) if n >= 2 else 0.0,
+                "median": round(statistics.median(vals), 4),
+                "p10": round(_percentile(vals_sorted, 10), 4),
+                "p90": round(_percentile(vals_sorted, 90), 4),
+                "count": n,
+            }
+        else:
+            summary_stats[idx] = None
+            period_stats[idx] = {
+                "mean": None, "min": None, "max": None,
+                "std_dev": None, "median": None, "p10": None, "p90": None,
+                "count": 0,
+            }
 
     sensors = []
     if requested_s2:
         sensors.append("Sentinel-2 L2A")
     if requested_landsat:
         sensors.append("Landsat 8/9 C2L2")
+
+    elapsed = time.time() - t0
+    log.info("Analysis complete: %d dates, %.1fs total", len(timeseries_results), elapsed)
 
     return {
         "metadata": {
@@ -296,6 +392,7 @@ def calculate_biomass_logic(request: AnalysisRequest) -> dict:
             "sensor": " + ".join(sensors)
         },
         "period_summary": summary_stats,
+        "period_stats": period_stats,
         "timeseries": timeseries_results
     }
 
@@ -373,7 +470,10 @@ def generate_tile_url(request: AnalysisRequest, index_name: str) -> dict:
     # ---------------------------------------------------------------
     #  Landsat branch
     # ---------------------------------------------------------------
-    if index_name in LANDSAT_INDICES:
+    # Route to the correct branch: explicit sensor hint (for RGB) or index membership
+    use_landsat = (index_name in LANDSAT_INDICES or
+                   (index_name == "RGB" and request.sensor and "Landsat" in request.sensor))
+    if use_landsat:
         # Palettes
         LST_PALETTE   = ['08306b', '2171b5', '6baed6', 'bdd7e7', 'ffffcc', 'fed976', 'fd8d3c', 'e31a1c', '800026']
         VSWI_PALETTE  = ['d73027', 'fc8d59', 'fee08b', 'd9ef8b', '66bd63', '1a9850']
@@ -429,9 +529,13 @@ def generate_tile_url(request: AnalysisRequest, index_name: str) -> dict:
                 viz_image = vci.multiply(0.5).add(tci.multiply(0.5))
                 vis_params = {'min': 0, 'max': 100, 'palette': HEALTH_PALETTE}
 
+        # Landsat RGB true-color composite
+        if index_name == "RGB":
+            viz_image = image.select(['SR_B4', 'SR_B3', 'SR_B2'])
+            vis_params = {'min': 0.0, 'max': 0.3}
+
         if viz_image:
-            map_id_dict = viz_image.getMapId(vis_params)
-            return {"layer_url": map_id_dict['tile_fetcher'].url_format, "index_name": index_name}
+            return _get_map_id(viz_image, vis_params, index_name, native_scale=30)
         raise Exception(f"Unsupported Landsat index: {index_name}")
 
     # ---------------------------------------------------------------
@@ -509,7 +613,264 @@ def generate_tile_url(request: AnalysisRequest, index_name: str) -> dict:
         vis_params = {'min': 0, 'max': 3000}
 
     if viz_image:
-        map_id_dict = viz_image.getMapId(vis_params)
-        return {"layer_url": map_id_dict['tile_fetcher'].url_format, "index_name": index_name}
+        return _get_map_id(viz_image, vis_params, index_name, native_scale=10)
 
     raise Exception(f"Unsupported index for visualisation: {index_name}")
+
+
+# ===========================================================================
+#  BATCH tile URL generation  –  one collection filter per date, all indices
+#  at once, parallelised getMapId calls via ThreadPoolExecutor.
+# ===========================================================================
+
+# ---- Palette definitions (shared across batch & single) ----
+_S2_PALETTES = {
+    'NDVI':  ['a50026','d73027','f46d43','fdae61','fee08b','d9ef8b','a6d96a','66bd63','1a9850','006837'],
+    'NDRE':  ['440154','482878','3e4989','31688e','26828e','1f9e89','35b779','6ece58','b5de2b','fde725'],
+    'GNDVI': ['a50026','f46d43','fee08b','addd8e','66bd63','006837'],
+    'EVI':   ['CE7E45','DF923D','F1B555','FCD163','99B718','74A901','66A000','529400','3E8601','207401'],
+    'SAVI':  ['8c510a','bf812d','dfc27d','f6e8c3','c7eae5','80cdc1','35978f','01665e'],
+    'CIre':  ['ffffcc','d9f0a3','addd8e','78c679','41ab5d','238443','005a32'],
+    'MTCI':  ['ffffb2','fed976','feb24c','fd8d3c','fc4e2a','e31a1c','b10026'],
+    'IRECI': ['fef0d9','fdd49e','fdbb84','fc8d59','ef6548','d7301f','990000'],
+    'NDMI':  ['8c510a','d8b365','f6e8c3','c7eae5','5ab4ac','2166ac','053061'],
+    'NMDI':  ['d73027','fc8d59','fee090','ffffbf','e0f3f8','91bfdb','4575b4'],
+}
+_LS_PALETTES = {
+    'LST':  ['08306b','2171b5','6baed6','bdd7e7','ffffcc','fed976','fd8d3c','e31a1c','800026'],
+    'VSWI': ['d73027','fc8d59','fee08b','d9ef8b','66bd63','1a9850'],
+    'TVDI': ['2166ac','67a9cf','d1e5f0','fddbc7','ef8a62','b2182b'],
+    'TCI':  ['d73027','fc8d59','fee08b','d9ef8b','66bd63','1a9850'],
+    'VHI':  ['d73027','fc8d59','fee08b','d9ef8b','66bd63','1a9850'],
+}
+
+
+def _get_map_id(viz_image, vis_params, index_name, native_scale=None):
+    """Wrapper for getMapId suitable for ThreadPoolExecutor."""
+    mid = viz_image.getMapId(vis_params)
+    return {"layer_url": mid['tile_fetcher'].url_format, "index_name": index_name}
+
+
+def _build_s2_layers(image, indices):
+    """Build {index_name: (ee.Image, vis_params)} dict for Sentinel-2."""
+    layers = {}
+    for idx in indices:
+        viz = None; vp = {}
+        if idx == "NDVI":
+            viz = image.normalizedDifference(['B8','B4'])
+            vp = {'min': -0.2, 'max': 1.0, 'palette': _S2_PALETTES['NDVI']}
+        elif idx == "NDRE":
+            viz = image.normalizedDifference(['B8','B5'])
+            vp = {'min': -0.2, 'max': 0.8, 'palette': _S2_PALETTES['NDRE']}
+        elif idx == "GNDVI":
+            viz = image.normalizedDifference(['B8','B3'])
+            vp = {'min': -0.2, 'max': 0.9, 'palette': _S2_PALETTES['GNDVI']}
+        elif idx == "EVI":
+            viz = image.expression(
+                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 10000))',
+                {'NIR': image.select('B8'), 'RED': image.select('B4'), 'BLUE': image.select('B2')})
+            vp = {'min': -0.2, 'max': 0.8, 'palette': _S2_PALETTES['EVI']}
+        elif idx == "SAVI":
+            viz = image.expression(
+                '((NIR - RED) / (NIR + RED + 5000)) * 1.5',
+                {'NIR': image.select('B8'), 'RED': image.select('B4')})
+            vp = {'min': -0.2, 'max': 0.8, 'palette': _S2_PALETTES['SAVI']}
+        elif idx == "CIre":
+            viz = image.expression('(RE3 / RE1) - 1',
+                {'RE3': image.select('B7'), 'RE1': image.select('B5')})
+            vp = {'min': 0, 'max': 10, 'palette': _S2_PALETTES['CIre']}
+        elif idx == "MTCI":
+            viz = image.expression('(RE2 - RE1) / (RE1 - RED)',
+                {'RE2': image.select('B6'), 'RE1': image.select('B5'), 'RED': image.select('B4')})
+            vp = {'min': 0, 'max': 6, 'palette': _S2_PALETTES['MTCI']}
+        elif idx == "IRECI":
+            viz = image.expression('(RE3 - RED) * RE2 / (RE1 * 10000)',
+                {'RE3': image.select('B7'), 'RED': image.select('B4'),
+                 'RE1': image.select('B5'), 'RE2': image.select('B6')})
+            vp = {'min': 0, 'max': 3, 'palette': _S2_PALETTES['IRECI']}
+        elif idx == "NDMI":
+            viz = image.normalizedDifference(['B8','B11'])
+            vp = {'min': -0.8, 'max': 0.8, 'palette': _S2_PALETTES['NDMI']}
+        elif idx == "NMDI":
+            viz = image.expression(
+                '(NIR - (SWIR1 - SWIR2)) / (NIR + (SWIR1 - SWIR2))',
+                {'NIR': image.select('B8'), 'SWIR1': image.select('B11'), 'SWIR2': image.select('B12')})
+            vp = {'min': 0, 'max': 1.0, 'palette': _S2_PALETTES['NMDI']}
+        elif idx == "RGB":
+            viz = image.select(['B4','B3','B2'])
+            vp = {'min': 0, 'max': 3000}
+        if viz is not None:
+            layers[idx] = (viz, vp)
+    return layers
+
+
+def _build_ls_layers(image, indices, region):
+    """Build {index_name: (ee.Image, vis_params)} dict for Landsat 8/9."""
+    ndvi_l = image.normalizedDifference(['SR_B5','SR_B4']).rename('ndvi_l')
+    lst_c  = image.select('ST_B10').subtract(273.15).rename('lst_c')
+
+    layers = {}
+    needs_mm = any(i in ('TVDI','TCI','VHI') for i in indices)
+    mm_done = False
+    ndvi_min = ndvi_max = lst_min = lst_max = ndvi_rng = lst_rng = None
+
+    for idx in indices:
+        viz = None; vp = {}
+        if idx == "LST":
+            viz = lst_c
+            vp = {'min': 0, 'max': 45, 'palette': _LS_PALETTES['LST']}
+        elif idx == "VSWI":
+            viz = ndvi_l.divide(lst_c)
+            vp = {'min': 0, 'max': 0.06, 'palette': _LS_PALETTES['VSWI']}
+        elif idx in ("TVDI","TCI","VHI"):
+            if needs_mm and not mm_done:
+                mm = ee.Image.cat([ndvi_l, lst_c]).reduceRegion(
+                    reducer=ee.Reducer.minMax(), geometry=region, scale=30, maxPixels=1e9)
+                ndvi_min = ee.Number(mm.get('ndvi_l_min'))
+                ndvi_max = ee.Number(mm.get('ndvi_l_max'))
+                lst_min  = ee.Number(mm.get('lst_c_min'))
+                lst_max  = ee.Number(mm.get('lst_c_max'))
+                ndvi_rng = ndvi_max.subtract(ndvi_min).max(0.001)
+                lst_rng  = lst_max.subtract(lst_min).max(0.001)
+                mm_done = True
+            if idx == "TVDI":
+                viz = lst_c.subtract(lst_min).divide(lst_rng)
+                vp = {'min': 0, 'max': 1, 'palette': _LS_PALETTES['TVDI']}
+            elif idx == "TCI":
+                viz = ee.Image.constant(lst_max).subtract(lst_c).divide(lst_rng).multiply(100)
+                vp = {'min': 0, 'max': 100, 'palette': _LS_PALETTES['TCI']}
+            elif idx == "VHI":
+                vci = ndvi_l.subtract(ndvi_min).divide(ndvi_rng).multiply(100)
+                tci = ee.Image.constant(lst_max).subtract(lst_c).divide(lst_rng).multiply(100)
+                viz = vci.multiply(0.5).add(tci.multiply(0.5))
+                vp = {'min': 0, 'max': 100, 'palette': _LS_PALETTES['VHI']}
+        elif idx == "RGB":
+            viz = image.select(['SR_B4','SR_B3','SR_B2'])
+            vp = {'min': 0.0, 'max': 0.3}
+        if viz is not None:
+            layers[idx] = (viz, vp)
+    return layers
+
+
+def generate_tile_urls_batch(date: str, sensor: str, indices: list,
+                             geojson: dict, cloud_cover: int = 20) -> dict:
+    """Return tile URLs for ALL requested indices on a single date/sensor.
+
+    Steps:
+      1. Filter collection ONCE
+      2. Build mosaic ONCE
+      3. Compute all index images (lazy ee.Image objects – no round-trip)
+      4. Call getMapId in PARALLEL via ThreadPoolExecutor
+
+    Returns {"date", "sensor", "layers": [{"layer_url", "index_name"}, ...], "elapsed_ms"}
+    """
+    t0 = time.time()
+    region = ee.Geometry(geojson)
+    s_date = ee.Date(date)
+    e_date = s_date.advance(1, 'day')
+
+    # ---------- Build collection & mosaic ONCE ----------
+    if "Landsat" in sensor:
+        l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+        l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+        col = (l8.merge(l9)
+               .filterBounds(region).filterDate(s_date, e_date)
+               .filter(ee.Filter.lt('CLOUD_COVER', cloud_cover))
+               .map(_mask_landsat_clouds).map(_apply_landsat_scale))
+        if col.size().getInfo() == 0:
+            raise Exception(f"No clear Landsat imagery for {date}")
+        image = col.median().clip(region)
+        layer_defs = _build_ls_layers(image, indices, region)
+    else:
+        col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+               .filterBounds(region).filterDate(s_date, e_date)
+               .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
+               .map(_mask_s2_clouds))
+        if col.size().getInfo() == 0:
+            raise Exception(f"No clear Sentinel-2 imagery for {date}")
+        image = col.median().clip(region)
+        layer_defs = _build_s2_layers(image, indices)
+
+    # ---------- Parallel getMapId ----------
+    native_scale = 30 if "Landsat" in sensor else 10
+    results = []
+    with ThreadPoolExecutor(max_workers=min(len(layer_defs), 8)) as pool:
+        futures = {
+            pool.submit(_get_map_id, viz, vp, idx, native_scale): idx
+            for idx, (viz, vp) in layer_defs.items()
+        }
+        for fut in as_completed(futures):
+            idx = futures[fut]
+            try:
+                results.append(fut.result())
+            except Exception as exc:
+                log.warning("getMapId failed for %s: %s", idx, exc)
+
+    # Preserve original index order
+    order = {name: i for i, name in enumerate(indices)}
+    results.sort(key=lambda r: order.get(r['index_name'], 999))
+
+    elapsed = round((time.time() - t0) * 1000)
+    log.info("Batch %s %s: %d layers in %d ms", date, sensor, len(results), elapsed)
+    return {"date": date, "sensor": sensor, "layers": results, "elapsed_ms": elapsed}
+
+
+# ===========================================================================
+#  Pixel value query  –  sample index values at a single point
+# ===========================================================================
+
+def query_pixel_value(lat: float, lng: float, date: str, sensor: str,
+                      indices: list, geojson: dict, cloud_cover: int = 20) -> dict:
+    """Return index values at a specific lat/lng for a single date/sensor."""
+    region = ee.Geometry(geojson)
+    point = ee.Geometry.Point([lng, lat])
+    s_date = ee.Date(date)
+    e_date = s_date.advance(1, 'day')
+
+    if "Landsat" in sensor:
+        l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+        l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+        col = (l8.merge(l9)
+               .filterBounds(region).filterDate(s_date, e_date)
+               .filter(ee.Filter.lt('CLOUD_COVER', cloud_cover))
+               .map(_mask_landsat_clouds).map(_apply_landsat_scale))
+        image = col.median().clip(region)
+        layer_defs = _build_ls_layers(image, indices, region)
+        scale = 30
+    else:
+        col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+               .filterBounds(region).filterDate(s_date, e_date)
+               .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
+               .map(_mask_s2_clouds))
+        image = col.median().clip(region)
+        layer_defs = _build_s2_layers(image, indices)
+        scale = 10
+
+    bands = []
+    band_names = []
+    for idx, (viz, vp) in layer_defs.items():
+        if idx != 'RGB':
+            bands.append(viz.rename(idx))
+            band_names.append(idx)
+
+    if not bands:
+        return {"lat": lat, "lng": lng, "date": date, "values": {}}
+
+    combined = ee.Image.cat(bands)
+    try:
+        raw = combined.reduceRegion(
+            reducer=ee.Reducer.first(),
+            geometry=point,
+            scale=scale
+        ).getInfo()
+    except Exception as exc:
+        log.warning("Pixel query failed at (%s, %s): %s", lat, lng, exc)
+        return {"lat": lat, "lng": lng, "date": date, "values": {}}
+
+    result_values = {}
+    for idx in band_names:
+        v = raw.get(idx)
+        if v is not None:
+            result_values[idx] = round(v, 4)
+
+    return {"lat": lat, "lng": lng, "date": date, "values": result_values}

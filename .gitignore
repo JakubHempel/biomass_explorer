@@ -10,4 +10,7 @@ biomass_results.db
 __pycache__/
 *.py[cod]
 venv/
+
+# IDE
 .vscode/
+.cursor/
