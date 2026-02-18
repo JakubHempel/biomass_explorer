@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biomass Explorer</title>
+    <meta name="description" content="Satellite-based crop monitoring tool using Sentinel-2 and Landsat imagery via Google Earth Engine">
     <link rel="icon" type="image/png" href="/static/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,20 +25,20 @@
 <div id="sidebar">
 
     <!-- Brand banner -->
-    <div class="app-header">
+    <header class="app-header">
         <div class="app-header-inner">
             <span class="app-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span>
             <div>
                 <h2 class="app-title">Biomass Explorer</h2>
                 <span class="app-subtitle">Crop monitoring from space</span>
             </div>
-            <button type="button" class="header-dark-btn" id="btn-dark-mode" onclick="toggleDarkMode()" title="Toggle dark/light mode">&#9789;</button>
-            <button type="button" class="header-info-btn" id="btn-about" onclick="toggleAboutPanel()" title="About this tool">&#9432;</button>
+            <button type="button" class="header-dark-btn" id="btn-dark-mode" onclick="toggleDarkMode()" title="Toggle dark/light mode" aria-label="Toggle dark mode">&#9789;</button>
+            <button type="button" class="header-info-btn" id="btn-about" onclick="toggleAboutPanel()" title="About this tool" aria-label="About this tool">&#9432;</button>
         </div>
-    </div>
+    </header>
 
     <!-- About overlay (always accessible via header button) -->
-    <div id="about-overlay" class="about-overlay" style="display:none;">
+    <div id="about-overlay" class="about-overlay" style="display:none;" role="dialog" aria-modal="true" aria-label="About this tool">
         <div class="about-overlay-card">
             <div class="about-overlay-header">
                 <span class="about-overlay-title">About this tool</span>
@@ -77,30 +78,36 @@
         </div>
     </div>
 
-    <div class="sidebar-body">
+    <div class="sidebar-body" role="main">
 
         <div class="card" id="setup-card">
-            <h3><span class="section-num">1</span> Analysis Setup</h3>
+            <h3 onclick="toggleSetupCard()" style="cursor:pointer;user-select:none;">
+                <span class="section-num">1</span> Analysis Setup
+                <span class="setup-chevron" id="setup-chevron"></span>
+            </h3>
+            <div id="setup-summary" class="setup-summary" style="display:none;"></div>
 
+            <div id="setup-body">
             <!-- SECTION: Field Identity -->
             <div class="setup-section">
                 <div class="setup-section-title">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                     Field &amp; Time
                 </div>
-                <label>Field Name</label>
+                <label for="field_id">Field Name</label>
                 <div class="field-name-row">
                     <input type="text" id="field_id" placeholder="e.g. Field_1">
                     <button type="button" class="btn-saved-fields" id="btn-saved-fields" onclick="toggleSavedFields()" title="Recent fields">&#9776;</button>
                 </div>
                 <div id="saved-fields-dropdown" class="saved-fields-dropdown" style="display:none;"></div>
 
-                <label>Time Period</label>
+                <label for="start_date">Time Period</label>
                 <div class="date-inputs">
                     <input type="date" id="start_date">
                     <span class="date-sep">to</span>
                     <input type="date" id="end_date">
                 </div>
+                <div id="date-validation" class="validation-msg"></div>
             </div>
 
             <!-- SECTION: Indices Selection -->
@@ -189,6 +196,7 @@
                 <!-- Tab 3: GeoJSON -->
                 <div class="aoi-tab-content" id="aoi-panel-geojson">
                     <textarea id="geojson_input" class="geo-textarea" placeholder="Paste coordinates: [[[lon, lat], ...]]"></textarea>
+                    <div id="geojson-validation" class="validation-msg"></div>
                     <button type="button" class="btn-outline btn-apply-geojson" onclick="applyGeoJSON()">APPLY GEOJSON</button>
                 </div>
 
@@ -204,11 +212,14 @@
                 <span id="btn-search-text">SEARCH FOR IMAGES</span>
                 <span id="btn-search-spinner" class="spinner" style="display:none;"></span>
             </button>
+            </div><!-- /setup-body -->
         </div>
 
         <!-- Results Card -->
         <div id="result-card" class="card" style="display:none;">
             <h3><span class="section-num">2</span> Results Overview</h3>
+
+            <div id="warnings-panel"></div>
 
             <div id="summary-panel"></div>
 
@@ -218,9 +229,7 @@
                 <span id="btn-chart-text">SHOW TIME SERIES CHART</span>
             </button>
 
-            <div id="warnings-panel"></div>
-
-            <label style="margin-top:4px;">Available Observation Dates</label>
+            <label style="margin-top:14px;">Available Observation Dates</label>
             <div id="dates-container"></div>
 
             <button class="btn-secondary" id="btn-load" onclick="loadSelectedLayers()">
@@ -229,7 +238,7 @@
             </button>
         </div>
 
-        <div id="status">
+        <div id="status" role="status" aria-live="polite">
             <span id="status-text">Ready to start.</span>
             <div id="progress-bar" class="progress-bar" style="display:none;">
                 <div id="progress-fill" class="progress-fill"></div>
@@ -242,25 +251,25 @@
 <div id="map">
 
     <!-- Sidebar toggle (desktop) -->
-    <button type="button" class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+    <button type="button" class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
 
     <!-- Mobile menu button -->
-    <button type="button" class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleMobileSidebar()">&#9776;</button>
+    <button type="button" class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleMobileSidebar()" aria-label="Open menu">&#9776;</button>
 
     <!-- Map tools toolbar -->
     <div class="map-tools" id="map-tools">
-        <button type="button" class="map-tool-btn" id="btn-measure-dist" onclick="toggleMeasure('distance')" title="Measure distance">
+        <button type="button" class="map-tool-btn" id="btn-measure-dist" onclick="toggleMeasure('distance')" title="Measure distance" aria-label="Measure distance">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18L18 2"/><path d="M7.5 12.5l2-2"/><path d="M12.5 7.5l2-2"/><circle cx="2" cy="18" r="1.5" fill="currentColor" stroke="none"/><circle cx="18" cy="2" r="1.5" fill="currentColor" stroke="none"/></svg>
         </button>
-        <button type="button" class="map-tool-btn" id="btn-measure-area" onclick="toggleMeasure('area')" title="Measure area">
+        <button type="button" class="map-tool-btn" id="btn-measure-area" onclick="toggleMeasure('area')" title="Measure area" aria-label="Measure area">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" opacity="0.18"><polygon points="4,4 20,6 18,20 2,16"/></svg><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute"><polygon points="4,4 20,6 18,20 2,16" fill="none"/><circle cx="4" cy="4" r="1.5" fill="currentColor" stroke="none"/><circle cx="20" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="18" cy="20" r="1.5" fill="currentColor" stroke="none"/><circle cx="2" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg>
         </button>
-        <button type="button" class="map-tool-btn" id="btn-pixel-inspect" onclick="togglePixelInspector()" title="Inspect pixel values">
+        <button type="button" class="map-tool-btn" id="btn-pixel-inspect" onclick="togglePixelInspector()" title="Inspect pixel values" aria-label="Inspect pixel values">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         </button>
-        <button type="button" class="map-tool-btn" id="btn-recenter" onclick="zoomToAOI()" title="Recenter on field" style="display:none;">
+        <button type="button" class="map-tool-btn" id="btn-recenter" onclick="zoomToAOI()" title="Recenter on field" aria-label="Recenter on field" style="display:none;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/></svg>
         </button>
     </div>
@@ -324,7 +333,7 @@
     </div>
 
     <!-- Floating Chart Popup -->
-    <div id="chart-popup" class="chart-popup" style="display:none;">
+    <div id="chart-popup" class="chart-popup" style="display:none;" role="dialog" aria-modal="false" aria-label="Time series chart">
         <div class="chart-popup-header">
             <div class="chart-popup-title-row">
                 <span class="chart-popup-icon">&#128200;</span>
@@ -364,6 +373,9 @@
 <script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js"></script>
+<!-- Toast notification container -->
+<div id="toast-container" aria-live="polite" aria-relevant="additions"></div>
+
 <script src="/static/script.js"></script>
 
 </body>

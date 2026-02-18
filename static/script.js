@@ -1,14 +1,94 @@
 const API_URL = window.location.origin;
 
 // =========================================================================
+//  TOAST NOTIFICATION SYSTEM
+// =========================================================================
+const TOAST_ICONS = { error: '!', warning: '!', success: '\u2713', info: 'i' };
+
+function showToast(message, type, duration) {
+    type = type || 'error';
+    duration = duration !== undefined ? duration : 5000;
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+    var toast = document.createElement('div');
+    toast.className = 'toast toast-' + type;
+    toast.innerHTML =
+        '<span class="toast-icon">' + (TOAST_ICONS[type] || 'i') + '</span>' +
+        '<span class="toast-body">' + message + '</span>' +
+        '<button type="button" class="toast-close" aria-label="Dismiss notification">&times;</button>';
+    toast.querySelector('.toast-close').addEventListener('click', function() { dismissToast(toast); });
+    container.appendChild(toast);
+    if (duration > 0) {
+        setTimeout(function() { dismissToast(toast); }, duration);
+    }
+}
+
+function dismissToast(toast) {
+    if (!toast || toast.classList.contains('toast-removing')) return;
+    toast.classList.add('toast-removing');
+    setTimeout(function() { toast.remove(); }, 220);
+}
+
+// =========================================================================
 //  ABOUT PANEL TOGGLE  (always accessible from header)
 // =========================================================================
 function toggleAboutPanel() {
-    const overlay = document.getElementById('about-overlay');
-    const btn = document.getElementById('btn-about');
-    const isOpen = overlay.style.display !== 'none';
-    overlay.style.display = isOpen ? 'none' : 'flex';
+    var overlay = document.getElementById('about-overlay');
+    var btn = document.getElementById('btn-about');
+    var isOpen = overlay.style.display !== 'none';
+    if (isOpen) {
+        overlay.classList.add('closing');
+        setTimeout(function() {
+            overlay.style.display = 'none';
+            overlay.classList.remove('closing');
+        }, 150);
+    } else {
+        overlay.style.display = 'flex';
+        overlay.classList.remove('closing');
+        var closeBtn = overlay.querySelector('.about-close-btn');
+        if (closeBtn) closeBtn.focus();
+    }
     btn.classList.toggle('active', !isOpen);
+}
+
+// =========================================================================
+//  COLLAPSIBLE SETUP CARD
+// =========================================================================
+let setupCardOpen = true;
+
+function toggleSetupCard() {
+    setupCardOpen = !setupCardOpen;
+    document.getElementById('setup-body').classList.toggle('collapsed', !setupCardOpen);
+    document.getElementById('setup-chevron').classList.toggle('collapsed', !setupCardOpen);
+    var summary = document.getElementById('setup-summary');
+    summary.style.display = setupCardOpen ? 'none' : 'block';
+}
+
+function collapseSetupCard() {
+    if (!setupCardOpen) return;
+    var fieldName = document.getElementById('field_id').value.trim() || 'Field';
+    var start = document.getElementById('start_date').value;
+    var end = document.getElementById('end_date').value;
+    var indices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
+
+    var summary = document.getElementById('setup-summary');
+    summary.innerHTML =
+        '<div class="ss-row"><span class="ss-label">Field</span><span class="ss-value">' + fieldName + '</span></div>' +
+        '<div class="ss-row"><span class="ss-label">Period</span><span class="ss-value">' + (start || '—') + ' → ' + (end || '—') + '</span></div>' +
+        '<div class="ss-row ss-row-wrap"><span class="ss-label">Indices</span><span class="ss-value">' + (indices.length > 0 ? indices.join(', ') : 'none') + '</span></div>';
+
+    setupCardOpen = false;
+    document.getElementById('setup-body').classList.add('collapsed');
+    document.getElementById('setup-chevron').classList.add('collapsed');
+    summary.style.display = 'block';
+}
+
+function expandSetupCard() {
+    if (setupCardOpen) return;
+    setupCardOpen = true;
+    document.getElementById('setup-body').classList.remove('collapsed');
+    document.getElementById('setup-chevron').classList.remove('collapsed');
+    document.getElementById('setup-summary').style.display = 'none';
 }
 
 // =========================================================================
@@ -200,7 +280,7 @@ function setAOI(geojson, info) {
 // =========================================================================
 async function searchParcel() {
     const query = document.getElementById('parcel_query').value.trim();
-    if (!query) { alert('Please enter a parcel ID or region name + number.'); return; }
+    if (!query) { showToast('Please enter a parcel ID or region name + number.', 'warning'); return; }
 
     const btn = document.getElementById('btn-parcel-search');
     const txt = document.getElementById('btn-parcel-text');
@@ -221,7 +301,7 @@ async function searchParcel() {
         const infoEl = document.getElementById('parcel-info');
         infoEl.innerHTML = buildParcelInfoHTML(first, data.count);
         infoEl.style.display = 'block';
-    } catch(e) { alert(e.message); }
+    } catch(e) { showToast(e.message, 'error'); }
 
     btn.disabled = false; txt.innerText = 'FIND PARCEL'; spin.style.display = 'none';
 }
@@ -280,13 +360,13 @@ async function onMapPickClick(e) {
 // =========================================================================
 function applyGeoJSON() {
     const raw = document.getElementById('geojson_input').value.trim();
-    if (!raw) { alert('Paste GeoJSON coordinates first.'); return; }
+    if (!raw) { showToast('Paste GeoJSON coordinates first.', 'warning'); return; }
     try {
         const coords = JSON.parse(raw);
         const geojson = { type: "Polygon", coordinates: coords };
         setAOI(geojson, null);
     } catch(e) {
-        alert('Invalid GeoJSON. Expected a coordinates array like [[[lon,lat], ...]]. Error: ' + e.message);
+        showToast('Invalid GeoJSON. Expected a coordinates array like [[[lon,lat], ...]].', 'error');
     }
 }
 
@@ -423,7 +503,7 @@ function toggleSensorDates(sensor, linkEl) {
 //  ZOOM TO AOI
 // =========================================================================
 function zoomToAOI() {
-    if (!currentAOI) { alert("Please select an area of interest first."); return; }
+    if (!currentAOI) { showToast('Please select an area of interest first.', 'warning'); return; }
     if (aoiLayer) { map.fitBounds(aoiLayer.getBounds(), { padding: [50, 50], animate: true }); }
 }
 
@@ -520,24 +600,21 @@ function buildSummaryPanel(periodSummary, requestedIndices) {
         const info = INDEX_INFO[idx];
         const shortName = info ? info.short : idx;
 
-        if (val != null) {
-            const cond = evaluateCondition(idx, val);
-            html += '<div class="stat-tile">'
-                  + '  <div class="stat-label">' + shortName + '</div>'
-                  + '  <div class="stat-value">' + formatStatValue(idx, val) + '</div>'
-                  + '  <div class="stat-avg-hint">period avg</div>'
-                  + '  <div class="stat-condition ' + cond.cls + '"><span class="dot"></span>' + cond.label + '</div>'
-                  + '</div>';
-        } else {
-            html += '<div class="stat-tile">'
-                  + '  <div class="stat-label">' + shortName + '</div>'
-                  + '  <div class="stat-value stat-na">N/A</div>'
-                  + '  <div class="stat-condition cond-neutral">No data</div>'
-                  + '</div>';
-        }
+        if (val == null) continue;
+        const cond = evaluateCondition(idx, val);
+        html += '<div class="stat-tile">'
+              + '  <div class="stat-label">' + shortName + '</div>'
+              + '  <div class="stat-value">' + formatStatValue(idx, val) + '</div>'
+              + '  <div class="stat-avg-hint">period avg</div>'
+              + '  <div class="stat-condition ' + cond.cls + '"><span class="dot"></span>' + cond.label + '</div>'
+              + '</div>';
     }
     html += '</div>';
     panel.innerHTML = html;
+    panel.querySelectorAll('.stat-tile').forEach(function(tile, i) {
+        tile.classList.add('stat-tile-animate');
+        tile.style.animationDelay = (i * 0.05) + 's';
+    });
 }
 
 // =========================================================================
@@ -545,21 +622,43 @@ function buildSummaryPanel(periodSummary, requestedIndices) {
 // =========================================================================
 function buildWarnings(periodSummary, requestedIndices, s2Count, lsCount) {
     const panel = document.getElementById('warnings-panel');
-    const msgs = [];
     const missing = requestedIndices.filter(i => periodSummary[i] == null);
-    if (missing.length > 0) {
-        const names = missing.map(i => INDEX_INFO[i] ? INDEX_INFO[i].short : i).join(', ');
-        msgs.push({ type: 'warning', text: 'No data could be computed for <b>' + names + '</b>. This is usually caused by persistent cloud cover over your field during the selected period.' });
-    }
+    if (missing.length === 0) { panel.innerHTML = ''; return; }
+
     const hasS2Req = requestedIndices.some(i => S2_INDICES.has(i));
     const hasLsReq = requestedIndices.some(i => LS_INDICES.has(i));
-    if (hasS2Req && s2Count === 0) msgs.push({ type: 'warning', text: 'No cloud-free optical satellite images were found. Try extending the time period.' });
-    if (hasLsReq && lsCount === 0) msgs.push({ type: 'warning', text: 'No cloud-free thermal satellite images were found. The thermal satellite revisits every 8–16 days — try a wider date range.' });
-    if (msgs.length === 0) { panel.innerHTML = ''; return; }
-    panel.innerHTML = msgs.map(m => {
-        if (m.type === 'warning') return '<div class="warning-box"><span class="warn-icon">&#9888;&#65039;</span><span>' + m.text + '</span></div>';
-        return '<div class="info-box"><span class="info-icon">&#8505;&#65039;</span><span>' + m.text + '</span></div>';
-    }).join('');
+    const missingS2 = missing.filter(i => S2_INDICES.has(i));
+    const missingLs = missing.filter(i => LS_INDICES.has(i));
+
+    var lines = [];
+
+    if (missingS2.length > 0) {
+        var names = missingS2.map(i => INDEX_INFO[i] ? INDEX_INFO[i].short : i).join(', ');
+        if (hasS2Req && s2Count === 0) {
+            lines.push('<b>' + names + '</b> — no cloud-free <b>Sentinel-2</b> (optical) images found during this period.');
+        } else {
+            lines.push('<b>' + names + '</b> — could not be computed (likely persistent cloud cover).');
+        }
+    }
+    if (missingLs.length > 0) {
+        var names = missingLs.map(i => INDEX_INFO[i] ? INDEX_INFO[i].short : i).join(', ');
+        if (hasLsReq && lsCount === 0) {
+            lines.push('<b>' + names + '</b> — no cloud-free <b>Landsat 8/9</b> (thermal) images found. Thermal satellites revisit every 8–16 days.');
+        } else {
+            lines.push('<b>' + names + '</b> — could not be computed (likely persistent cloud cover).');
+        }
+    }
+
+    if (lines.length === 0) { panel.innerHTML = ''; return; }
+
+    var html = '<div class="warning-box"><span class="warn-icon">&#9888;&#65039;</span><div>'
+        + '<div style="margin-bottom:4px;">Missing data for ' + missing.length + ' of ' + requestedIndices.length + ' indices:</div>'
+        + '<ul style="margin:0;padding-left:18px;line-height:1.65;">'
+        + lines.map(function(l) { return '<li>' + l + '</li>'; }).join('')
+        + '</ul>'
+        + '<div style="margin-top:6px;font-size:0.66rem;opacity:0.8;">Try extending the date range or selecting a different time period.</div>'
+        + '</div></div>';
+    panel.innerHTML = html;
 }
 
 // =========================================================================
@@ -598,19 +697,25 @@ function toggleChartPopup() {
         setActiveChartTab('all');
         buildPopupChart();
     } else {
-        popup.style.display = 'none';
+        popup.classList.add('closing');
+        setTimeout(function() {
+            popup.style.display = 'none';
+            popup.classList.remove('closing');
+            if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+        }, 150);
         btnText.innerText = 'SHOW TIME SERIES CHART';
         chartPopupVisible = false;
-        if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
     }
 }
 
 function buildChartTabs() {
     const container = document.getElementById('chart-popup-tabs');
     container.innerHTML = '';
+    const timeseries = lastAnalysisData ? lastAnalysisData.timeseries : [];
     const indices = lastRequestedIndices.filter(idx => {
         const info = INDEX_INFO[idx];
-        return info && !info.isRGB;
+        if (!info || info.isRGB) return false;
+        return timeseries.some(t => t.values[idx] != null);
     });
 
     const allBtn = document.createElement('button');
@@ -745,14 +850,17 @@ async function startAnalysis() {
     const end      = document.getElementById('end_date').value;
     const indices  = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
 
-    if (!start || !end) { alert("Please select a time period."); return; }
-    if (!currentAOI) { alert("Please select an area of interest using one of the methods (Parcel Search, Map Click, or GeoJSON)."); return; }
-    if (indices.length === 0) { alert("Please select at least one index to compute."); return; }
+    if (!start || !end) { showToast('Please select a time period.', 'warning'); return; }
+    if (!currentAOI) { showToast('Please select an area of interest using one of the methods (Parcel Search, Map Click, or GeoJSON).', 'warning'); return; }
+    if (indices.length === 0) { showToast('Please select at least one index to compute.', 'warning'); return; }
 
     clearAllOverlays();
 
-    // Show result card with skeleton loading immediately
-    document.getElementById('result-card').style.display = 'block';
+    var resultCard = document.getElementById('result-card');
+    resultCard.style.display = 'block';
+    resultCard.classList.remove('card-animate-in');
+    void resultCard.offsetWidth;
+    resultCard.classList.add('card-animate-in');
     showStatsSkeleton();
     showDatesSkeleton();
     document.getElementById('warnings-panel').innerHTML = '';
@@ -796,10 +904,20 @@ async function startAnalysis() {
 
         prepareChartData(data.timeseries, indices);
 
-        if (data.timeseries.length === 0) {
+        var allMissing = indices.every(function(i) { return data.period_summary[i] == null; });
+
+        if (data.timeseries.length === 0 || allMissing) {
             buildWarnings(data.period_summary || {}, indices, 0, 0);
+            document.getElementById('summary-panel').innerHTML = '';
+            document.getElementById('dates-container').innerHTML = '';
+            document.getElementById('btn-chart-toggle').style.display = 'none';
+            document.getElementById('btn-load').style.display = 'none';
+            document.querySelector('#result-card label[style]').style.display = 'none';
             setStatus("No cloud-free images were found for this period. Try a wider date range.", "warning");
         } else {
+            document.getElementById('btn-load').style.display = '';
+            document.querySelector('#result-card label[style]').style.display = '';
+
             const s2Dates = data.timeseries.filter(t => t.sensor === 'Sentinel-2');
             const lsDates = data.timeseries.filter(t => t.sensor === 'Landsat 8/9');
 
@@ -833,6 +951,7 @@ async function startAnalysis() {
         }
         setProgress(100);
         setTimeout(() => setProgress(-1), 800);
+        setTimeout(collapseSetupCard, 600);
     } catch(e) {
         console.error(e);
         setStatus("Error: " + e.message, "error");
@@ -854,8 +973,8 @@ async function loadSelectedLayers() {
         .map(cb => ({ date: cb.value, sensor: cb.dataset.sensor }));
     const allIndices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
 
-    if (checkedItems.length === 0) { alert("Please select at least one date from the list above."); return; }
-    if (!currentAOI) { alert("No area of interest set."); return; }
+    if (checkedItems.length === 0) { showToast('Please select at least one date from the list above.', 'warning'); return; }
+    if (!currentAOI) { showToast('No area of interest set.', 'warning'); return; }
 
     setStatus("Generating map overlays...", "loading");
     setProgress(5);
@@ -1120,10 +1239,27 @@ async function onPixelInspectClick(e) {
 
     if (!currentAOI || indices.length === 0) return;
 
-    const popup = L.popup({ maxWidth: 280 })
+    var currentZoom = map.getZoom();
+    if (currentZoom < 15 || currentZoom > 19) {
+        L.popup().setLatLng(e.latlng)
+            .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;">Zoom in to level 15–19 to inspect pixel values.</div>')
+            .openOn(map);
+        return;
+    }
+
+    var popup = L.popup({ maxWidth: 280, minWidth: 160, autoPan: true, closeOnClick: true, className: 'pixel-popup' })
         .setLatLng(e.latlng)
         .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;color:#64748b;">Querying pixel values...</div>')
         .openOn(map);
+
+    function checkPixelPopupZoom() {
+        var zoom = map.getZoom();
+        if (zoom < 15 || zoom > 19) {
+            map.closePopup(popup);
+        }
+    }
+    map.on('zoomend', checkPixelPopupZoom);
+    popup.on('remove', function() { map.off('zoomend', checkPixelPopupZoom); });
 
     try {
         const res = await fetch(API_URL + '/api/pixel-value', {
@@ -1165,7 +1301,7 @@ let aoiEditing = false;
 let editableLayers = [];
 
 function startEditAOI() {
-    if (!aoiLayer) { alert('No AOI polygon to edit.'); return; }
+    if (!aoiLayer) { showToast('No AOI polygon to edit.', 'warning'); return; }
     if (aoiEditing) { finishEditAOI(); return; }
 
     aoiEditing = true;
@@ -1341,6 +1477,156 @@ document.getElementById('start_date').addEventListener('change', function() {
         endInput.value = start.toISOString().split('T')[0];
     }
 });
+
+// =========================================================================
+//  REAL-TIME INPUT VALIDATION + SEARCH BUTTON GATING
+// =========================================================================
+function validateDates() {
+    var startEl = document.getElementById('start_date');
+    var endEl = document.getElementById('end_date');
+    var msgEl = document.getElementById('date-validation');
+    var start = startEl.value;
+    var end = endEl.value;
+
+    startEl.classList.remove('input-error', 'input-success');
+    endEl.classList.remove('input-error', 'input-success');
+    msgEl.className = 'validation-msg';
+    msgEl.textContent = '';
+
+    if (!start && !end) { updateSearchBtn(); return true; }
+
+    var today = new Date().toISOString().split('T')[0];
+    if (start && start > today) {
+        startEl.classList.add('input-error');
+        msgEl.textContent = 'Start date is in the future — no satellite data available.';
+        msgEl.classList.add('val-error', 'visible');
+        updateSearchBtn();
+        return false;
+    }
+    if (end && end > today) {
+        endEl.classList.add('input-error');
+        msgEl.textContent = 'End date is in the future — no satellite data available yet.';
+        msgEl.classList.add('val-error', 'visible');
+        updateSearchBtn();
+        return false;
+    }
+
+    if (start && end) {
+        if (end < start) {
+            startEl.classList.add('input-error');
+            endEl.classList.add('input-error');
+            msgEl.textContent = 'End date must be after the start date.';
+            msgEl.classList.add('val-error', 'visible');
+            updateSearchBtn();
+            return false;
+        }
+        var diffMs = new Date(end) - new Date(start);
+        var diffDays = Math.round(diffMs / 86400000);
+        if (diffDays > 365) {
+            msgEl.textContent = 'Range is ' + diffDays + ' days — very long periods may be slow.';
+            msgEl.classList.add('val-error', 'visible');
+        }
+        startEl.classList.add('input-success');
+        endEl.classList.add('input-success');
+    }
+
+    updateSearchBtn();
+    return true;
+}
+
+document.getElementById('start_date').addEventListener('change', validateDates);
+document.getElementById('end_date').addEventListener('change', validateDates);
+
+(function initGeoJSONValidation() {
+    var textarea = document.getElementById('geojson_input');
+    var msgEl = document.getElementById('geojson-validation');
+    textarea.addEventListener('input', function() {
+        var raw = textarea.value.trim();
+        textarea.classList.remove('input-error', 'input-success');
+        msgEl.className = 'validation-msg';
+        msgEl.textContent = '';
+        if (!raw) return;
+        try {
+            var coords = JSON.parse(raw);
+            if (!Array.isArray(coords) || !Array.isArray(coords[0]) || !Array.isArray(coords[0][0])) {
+                throw new Error('Not a valid coordinates array');
+            }
+            textarea.classList.add('input-success');
+            msgEl.textContent = 'Valid coordinate array (' + coords[0].length + ' vertices).';
+            msgEl.classList.add('val-success', 'visible');
+        } catch(e) {
+            textarea.classList.add('input-error');
+            msgEl.textContent = 'Invalid JSON — expected [[[lon, lat], ...]].';
+            msgEl.classList.add('val-error', 'visible');
+        }
+    });
+})();
+
+function updateSearchBtn() {
+    var btn = document.getElementById('btn-search');
+    var start = document.getElementById('start_date').value;
+    var end = document.getElementById('end_date').value;
+    var indices = document.querySelectorAll('input[name="idx"]:checked');
+    var hasAOI = !!currentAOI;
+
+    var datesOk = start && end && end >= start;
+    var today = new Date().toISOString().split('T')[0];
+    if (start > today || end > today) datesOk = false;
+
+    var ready = datesOk && indices.length > 0 && hasAOI;
+    btn.disabled = !ready;
+}
+
+document.querySelectorAll('input[name="idx"]').forEach(function(cb) {
+    cb.addEventListener('change', updateSearchBtn);
+});
+document.getElementById('start_date').addEventListener('change', updateSearchBtn);
+document.getElementById('end_date').addEventListener('change', updateSearchBtn);
+
+// Recheck when AOI changes (called from setAOI)
+var origSetAOI = setAOI;
+setAOI = function(geojson, info) {
+    origSetAOI(geojson, info);
+    updateSearchBtn();
+};
+
+// Initial state
+setTimeout(updateSearchBtn, 100);
+
+// =========================================================================
+//  FOCUS TRAP FOR MODALS  (about overlay, chart popup)
+// =========================================================================
+function trapFocus(containerEl) {
+    var focusable = containerEl.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return null;
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+    function handler(e) {
+        if (e.key !== 'Tab') return;
+        if (e.shiftKey) {
+            if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+        } else {
+            if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+    }
+    containerEl.addEventListener('keydown', handler);
+    return function release() { containerEl.removeEventListener('keydown', handler); };
+}
+
+var aboutTrapRelease = null;
+var origToggleAbout = toggleAboutPanel;
+toggleAboutPanel = function() {
+    origToggleAbout();
+    var overlay = document.getElementById('about-overlay');
+    if (overlay.style.display !== 'none' && !overlay.classList.contains('closing')) {
+        aboutTrapRelease = trapFocus(overlay);
+    } else if (aboutTrapRelease) {
+        aboutTrapRelease();
+        aboutTrapRelease = null;
+    }
+};
 
 // =========================================================================
 //  11. ONBOARDING TOUR
