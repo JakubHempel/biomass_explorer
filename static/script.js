@@ -75,7 +75,7 @@ function collapseSetupCard() {
     summary.innerHTML =
         '<div class="ss-row"><span class="ss-label">Field</span><span class="ss-value">' + fieldName + '</span></div>' +
         '<div class="ss-row"><span class="ss-label">Period</span><span class="ss-value">' + (start || '—') + ' → ' + (end || '—') + '</span></div>' +
-        '<div class="ss-row ss-row-wrap"><span class="ss-label">Indices</span><span class="ss-value">' + (indices.length > 0 ? indices.join(', ') : 'none') + '</span></div>';
+        '<div class="ss-row"><span class="ss-label">Indices</span><span class="ss-value">' + (indices.length > 0 ? indices.join(', ') : 'none') + '</span></div>';
 
     setupCardOpen = false;
     document.getElementById('setup-body').classList.add('collapsed');

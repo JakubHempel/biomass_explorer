@@ -1888,19 +1888,13 @@ body.dark-mode .leaflet-control-geocoder-alternatives li:hover {
     display: flex;
     justify-content: space-between;
     padding: 2px 0;
-    gap: 12px;
-}
-.setup-summary .ss-row .ss-value {
-    text-align: right;
-}
-.setup-summary .ss-row-wrap {
+    gap: 8px;
     flex-wrap: wrap;
 }
-.setup-summary .ss-row-wrap .ss-value {
-    text-align: left;
-    flex-basis: 100%;
-    font-size: 0.64rem;
-    line-height: 1.5;
+.setup-summary .ss-row .ss-label { flex-shrink: 0; }
+.setup-summary .ss-row .ss-value {
+    text-align: right;
+    word-break: break-word;
 }
 
 /* ==========================================================================
