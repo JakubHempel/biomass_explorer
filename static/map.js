@@ -221,7 +221,8 @@ function toggleLayersPanel() {
 
 function switchBaseMap(key) {
     Object.values(baseMaps).forEach(l => map.removeLayer(l));
-    baseMaps[key].addTo(map);
+    map.addLayer(baseMaps[key]);
+    baseMaps[key].bringToBack();
 }
 
 function addOverlayToPanel(layer, idx, date, sensor) {
