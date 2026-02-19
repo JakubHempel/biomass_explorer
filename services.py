@@ -1,5 +1,6 @@
 import ee
 import statistics
+from datetime import date as date_type
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from schemas import AnalysisRequest, BiomassResponse
 from sqlalchemy.orm import Session
@@ -406,7 +407,7 @@ def save_results_to_db(db: Session, result_data: dict):
     new_count = 0
 
     for item in result_data["timeseries"]:
-        measurement_date = item["date"]
+        measurement_date = date_type.fromisoformat(item["date"])
         sensor = item.get("sensor", "")
         values = item["values"]
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Date, UniqueConstraint
 from database import Base
 
 class Measurement(Base):
@@ -6,7 +6,7 @@ class Measurement(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     field_id = Column(String, index=True)
-    date = Column(String, index=True)
+    date = Column(Date, index=True)
     sensor = Column(String, index=True)          # "Sentinel-2" or "Landsat 8/9"
     
     # --- Sentinel-2 spectral indices (10) ---
