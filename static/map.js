@@ -4,7 +4,7 @@
 const satellite = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=en', { maxNativeZoom: 20, maxZoom: 22 });
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: 22 });
 
-const map = L.map('map', { center: [52.0, 19.0], zoom: 6, maxZoom: 22, layers: [satellite] });
+const map = L.map('map', { center: [52.0, 19.0], zoom: 7, maxZoom: 22, layers: [satellite] });
 const baseMaps = { satellite, osm };
 
 L.control.scale({ metric: true, imperial: false }).addTo(map);
