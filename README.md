@@ -86,8 +86,13 @@ biomass_explorer/
 ├── .env                 # GEE_PROJECT_ID (not committed)
 └── static/
     ├── index.html       # Sidebar UI, setup sections, map container, tools
-    ├── script.js        # Analysis logic, map tools, geocoder, dark mode, onboarding
-    ├── style.css        # Design system, dark mode, responsive layout
+    ├── config.js        # Constants, toast system, index metadata, format utilities
+    ├── map.js           # Map initialisation, AOI handling, layers panel, saved fields
+    ├── tools.js         # Geocoder, measurement, pixel inspector, edit AOI, coordinates
+    ├── app.js           # Analysis, charts, validation, dark mode, onboarding
+    ├── style.css        # Core design system (variables, layout, forms, buttons)
+    ├── components.css   # UI component styles (panels, stats, legend, chart popup)
+    ├── theme.css        # Dark mode, responsive, animations, third-party overrides
     └── favicon.png      # App icon (globe + leaf)
 ```
 
@@ -98,8 +103,23 @@ biomass_explorer/
 ### Prerequisites
 
 - Python 3.10+
-- A registered [Google Earth Engine](https://earthengine.google.com/) account
-- A Google Cloud project with the Earth Engine API enabled
+- A Google account
+- A Google Cloud project with the Earth Engine API enabled (free tier is sufficient — see below)
+
+### Create a Google Earth Engine Project (free)
+
+1. Go to [Google Earth Engine](https://earthengine.google.com/) and click **Get Started** / **Sign Up**. Sign in with your Google account.
+2. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a new project (or use an existing one):
+   - Click the project selector dropdown at the top of the page.
+   - Click **New Project**.
+   - Enter a project name and click **Create**.
+   - Note the **Project ID** shown below the name field — this is what you will put in `.env`.
+3. Register your project for Earth Engine access:
+   - Go to [code.earthengine.google.com/register](https://code.earthengine.google.com/register).
+   - Select **Unpaid usage** > **Academia & Research** (or the option that fits your use case).
+   - Choose the Cloud project you just created and accept the terms.
+
+After these steps you will have a project ID (e.g. `biomass-explorer`) ready to use.
 
 ### Installation
 
@@ -109,7 +129,7 @@ biomass_explorer/
    cd biomass_explorer
    ```
 
-2. **Create a `.env` file** in the project root:
+2. **Create a `.env` file** in the project root with your project ID:
    ```text
    GEE_PROJECT_ID='your-google-cloud-project-id'
    ```
@@ -124,7 +144,7 @@ biomass_explorer/
    uvicorn main:app --reload
    ```
 
-5. **Authenticate with GEE** — on first run the console will print a URL. Open it, log in with Google, and authorise. A token is cached locally for future sessions.
+5. **Authenticate with GEE** — on first run the console will print a URL. Open it, log in with the same Google account that owns the Cloud project, and authorise. A token is cached locally for future sessions.
 
 6. **Open the app** at [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
@@ -166,7 +186,7 @@ The `measurements` table stores one row per **(field, date, sensor)** combinatio
 |:-------|:-----|:------|
 | `id` | Integer | Primary key |
 | `field_id` | String | User-defined field name |
-| `date` | String | Observation date (YYYY-MM-DD) |
+| `date` | Date | Observation date |
 | `sensor` | String | `"Sentinel-2"` or `"Landsat 8/9"` |
 | `ndvi` … `nmdi` | Float | Sentinel-2 index values (nullable) |
 | `lst` … `vhi` | Float | Landsat index values (nullable) |
