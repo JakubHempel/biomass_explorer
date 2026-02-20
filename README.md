@@ -119,7 +119,7 @@ biomass_explorer/
    - Select **Unpaid usage** > **Academia & Research** (or the option that fits your use case).
    - Choose the Cloud project you just created and accept the terms.
 
-After these steps you will have a project ID (e.g. `biomass-explorer`) ready to use.
+After these steps you will have a project ID ready to use.
 
 ### Installation
 
