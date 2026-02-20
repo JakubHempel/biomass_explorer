@@ -2,6 +2,8 @@
 
 **Biomass Explorer** is a web-based crop monitoring tool that combines **Sentinel-2** and **Landsat 8/9** satellite imagery via **Google Earth Engine** to analyse vegetation health, chlorophyll content, moisture levels, surface temperature, and drought stress over any field boundary.
 
+![Home — full dashboard view](static/screenshots/0_home.png)
+
 ---
 
 ## Key Features
@@ -27,6 +29,8 @@
 - **Boundary editing** — after loading any AOI, edit the polygon vertices directly on the map (double-click or press Escape to confirm).
 - **Saved fields** — recently used fields are stored in the browser and can be reloaded instantly with their geometry.
 
+![Cadastral parcel finder](static/screenshots/1_cadastral_finder.png)
+
 ### UI/UX
 - **Dark / Light mode** — toggle with the header button or press `D`.
 - **Collapsible sidebar** — toggle the sidebar to maximise map space.
@@ -40,6 +44,22 @@
 - **FastAPI** backend with async endpoints.
 - **SQLite persistence** — every analysis run is saved locally, queryable by field ID.
 - **ULDK integration** — Polish cadastral parcel lookup via the ULDK (GUGiK) web service.
+
+---
+
+## Screenshots
+
+### Analysis Results & Period Averages
+![Results overview with period averages and observation dates](static/screenshots/2_results.png)
+
+### Index Visualisation on Map
+![NDVI index overlay on satellite imagery with layer control and legend](static/screenshots/3_index_vis.png)
+
+### Pixel Inspector
+![Pixel value popup showing per-index values at a clicked location](static/screenshots/4_pixel_info.png)
+
+### Time Series Chart
+![NDMI time series chart showing moisture decline over the season](static/screenshots/5_time_series_chart.png)
 
 ---
 
