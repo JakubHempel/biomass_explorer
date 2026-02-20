@@ -498,4 +498,3 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 #status.status-success { background: var(--success-bg); border-color: #86efac; color: #166534; }
 #status.status-error   { background: var(--error-bg);   border-color: #fca5a5; color: #991b1b; }
 #status.status-warning { background: var(--warning-bg); border-color: #fde68a; color: #92400e; }
-
