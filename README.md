@@ -156,12 +156,12 @@ After these steps you will have a project ID ready to use.
 
 3. **Install dependencies:**
    ```bash
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
    ```
 
 4. **Start the server:**
    ```bash
-   uvicorn main:app --reload
+   python -m uvicorn main:app --reload
    ```
 
 5. **Authenticate with GEE** — on first run the console will print a URL. Open it, log in with the same Google account that owns the Cloud project, and authorise. A token is cached locally for future sessions.
