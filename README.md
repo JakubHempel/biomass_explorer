@@ -154,6 +154,12 @@ After these steps you will have a project ID ready to use.
    GEE_PROJECT_ID='your-google-cloud-project-id'
    ```
 
+   Optional (for serverless deployments before setting up Azure/Postgres):
+   ```text
+   ENABLE_DB='0'
+   ```
+   This disables database writes and `/history` persistence.
+
 3. **Install dependencies:**
    ```bash
    python -m pip install -r requirements.txt

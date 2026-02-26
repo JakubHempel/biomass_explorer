@@ -12,8 +12,9 @@ import database
 import models
 import uldk
 
-# 1. Creating table in the database
-models.Base.metadata.create_all(bind=database.engine)
+# 1. Creating table in the database (optional in serverless mode)
+if database.DATABASE_ENABLED and database.engine is not None:
+    models.Base.metadata.create_all(bind=database.engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,7 +45,8 @@ async def calculate_biomass_endpoint(
 ):
     try:
         result = services.calculate_biomass_logic(request)
-        services.save_results_to_db(db, result)
+        if db is not None:
+            services.save_results_to_db(db, result)
         return result
     except Exception as e:
         print(f"Error: {e}")
@@ -52,6 +54,8 @@ async def calculate_biomass_endpoint(
 
 @app.get("/history/{field_id}")
 async def get_history(field_id: str, db: Session = Depends(database.get_db)):
+    if db is None:
+        return []
     records = db.query(models.Measurement).filter(models.Measurement.field_id == field_id).all()
     return records
 
