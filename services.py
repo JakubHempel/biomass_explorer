@@ -1,9 +1,11 @@
 import ee
 import statistics
+import json
 from datetime import date as date_type
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from schemas import AnalysisRequest, BiomassResponse
 from sqlalchemy.orm import Session
+from google.oauth2 import service_account
 import models
 import os
 import time
@@ -26,10 +28,42 @@ LANDSAT_INDICES = {'LST', 'VSWI', 'TVDI', 'TCI', 'VHI'}
 # GEE initialisation
 # ---------------------------------------------------------------------------
 def init_gee():
+    if not MY_PROJECT_ID:
+        raise RuntimeError("Missing GEE_PROJECT_ID. Set it in environment variables or .env.")
+
     try:
         ee.Initialize(project=MY_PROJECT_ID)
-        print(f"GEE Initialized with project: {MY_PROJECT_ID}")
-    except Exception as e:
+        print(f"GEE initialized with default credentials. Project: {MY_PROJECT_ID}")
+        return
+    except Exception as default_auth_error:
+        # Server-side/service-account auth (recommended for Vercel/serverless)
+        sa_json = os.getenv("GEE_SERVICE_ACCOUNT_JSON")
+        if sa_json:
+            try:
+                sa_info = json.loads(sa_json)
+                creds = service_account.Credentials.from_service_account_info(
+                    sa_info,
+                    scopes=[
+                        "https://www.googleapis.com/auth/earthengine",
+                        "https://www.googleapis.com/auth/cloud-platform",
+                    ],
+                )
+                ee.Initialize(credentials=creds, project=MY_PROJECT_ID)
+                print(f"GEE initialized with service account. Project: {MY_PROJECT_ID}")
+                return
+            except Exception as service_account_error:
+                raise RuntimeError(
+                    "Failed to initialize GEE with GEE_SERVICE_ACCOUNT_JSON. "
+                    "Verify the JSON is valid and has Earth Engine access."
+                ) from service_account_error
+
+        # In serverless environments interactive auth is impossible.
+        if os.getenv("VERCEL") == "1":
+            raise RuntimeError(
+                "GEE auth failed on Vercel. Configure GEE_SERVICE_ACCOUNT_JSON and GEE_PROJECT_ID "
+                "in Vercel Environment Variables."
+            ) from default_auth_error
+
         print("Interactive authentication required...")
         ee.Authenticate()
         ee.Initialize(project=MY_PROJECT_ID)

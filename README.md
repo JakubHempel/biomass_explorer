@@ -176,6 +176,23 @@ After these steps you will have a project ID ready to use.
 
 ---
 
+## Vercel Deployment Notes
+
+Vercel cannot run interactive Google Earth Engine authentication (`ee.Authenticate()`), so you must provide
+service-account credentials via environment variables.
+
+Set these in **Vercel Project → Settings → Environment Variables**:
+
+- `GEE_PROJECT_ID` = your Google Cloud project id
+- `GEE_SERVICE_ACCOUNT_JSON` = full JSON key content for a service account with Earth Engine access
+- `ENABLE_DB` = `0` (if you want no persistence for now)
+
+Important:
+- The `GEE_SERVICE_ACCOUNT_JSON` value must be valid JSON (single-line is fine).
+- The service account must be granted access to Earth Engine in your GCP/GEE setup.
+
+---
+
 ## API Endpoints
 
 | Method | Path | Description |
