@@ -27,6 +27,42 @@ LANDSAT_INDICES = {'LST', 'VSWI', 'TVDI', 'TCI', 'VHI'}
 # ---------------------------------------------------------------------------
 # GEE initialisation
 # ---------------------------------------------------------------------------
+def _load_service_account_info(raw_json: str) -> dict:
+    """
+    Parse service-account JSON from env and normalize private_key newlines.
+    Raises RuntimeError with actionable messages.
+    """
+    try:
+        text = raw_json.strip()
+        # Common copy/paste issue: value wrapped in extra single quotes.
+        if (text.startswith("'") and text.endswith("'")) or (text.startswith('"') and text.endswith('"')):
+            text = text[1:-1]
+        info = json.loads(text)
+    except Exception as exc:
+        raise RuntimeError(
+            "GEE_SERVICE_ACCOUNT_JSON is not valid JSON. Paste the raw JSON object (without extra outer quotes)."
+        ) from exc
+
+    required = {"type", "project_id", "private_key", "client_email", "token_uri"}
+    missing = sorted(required - set(info.keys()))
+    if missing:
+        raise RuntimeError(
+            "GEE_SERVICE_ACCOUNT_JSON is missing required keys: " + ", ".join(missing)
+        )
+
+    if info.get("type") != "service_account":
+        raise RuntimeError(
+            "GEE_SERVICE_ACCOUNT_JSON must be a service account key (type=service_account), "
+            "not user OAuth credentials."
+        )
+
+    # Vercel env vars often store escaped newlines in private keys.
+    if isinstance(info.get("private_key"), str):
+        info["private_key"] = info["private_key"].replace("\\n", "\n")
+
+    return info
+
+
 def init_gee():
     if not MY_PROJECT_ID:
         raise RuntimeError("Missing GEE_PROJECT_ID. Set it in environment variables or .env.")
@@ -36,11 +72,17 @@ def init_gee():
         print(f"GEE initialized with default credentials. Project: {MY_PROJECT_ID}")
         return
     except Exception as default_auth_error:
+        log.warning(
+            "GEE default credential init failed (%s): %s",
+            type(default_auth_error).__name__,
+            str(default_auth_error),
+        )
+
         # Server-side/service-account auth (recommended for Vercel/serverless)
         sa_json = os.getenv("GEE_SERVICE_ACCOUNT_JSON")
         if sa_json:
             try:
-                sa_info = json.loads(sa_json)
+                sa_info = _load_service_account_info(sa_json)
                 creds = service_account.Credentials.from_service_account_info(
                     sa_info,
                     scopes=[
@@ -52,9 +94,15 @@ def init_gee():
                 print(f"GEE initialized with service account. Project: {MY_PROJECT_ID}")
                 return
             except Exception as service_account_error:
+                log.error(
+                    "GEE service-account init failed (%s): %s",
+                    type(service_account_error).__name__,
+                    str(service_account_error),
+                )
                 raise RuntimeError(
                     "Failed to initialize GEE with GEE_SERVICE_ACCOUNT_JSON. "
-                    "Verify the JSON is valid and has Earth Engine access."
+                    "Check Vercel logs for stage details (JSON format, key fields, key newline formatting, "
+                    "or Earth Engine permission issues)."
                 ) from service_account_error
 
         # In serverless environments interactive auth is impossible.

@@ -189,6 +189,9 @@ Set these in **Vercel Project → Settings → Environment Variables**:
 
 Important:
 - The `GEE_SERVICE_ACCOUNT_JSON` value must be valid JSON (single-line is fine).
+- Paste the JSON object directly (no extra outer `'...'` or `"..."` wrapping).
+- It must be a **service account** key (`"type": "service_account"`), not a user OAuth token.
+- If your key has escaped newlines in `private_key`, keep them as `\n` in the JSON value.
 - The service account must be granted access to Earth Engine in your GCP/GEE setup.
 
 ---
