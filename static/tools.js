@@ -23,6 +23,7 @@ map.on('layeradd', (e) => {
         map.fitBounds(bbox, { maxZoom: 15, animate: true });
     });
     geocoder.addTo(map);
+    if (typeof applyStaticTranslations === 'function') applyStaticTranslations();
 })();
 
 // =========================================================================
@@ -148,7 +149,7 @@ async function onPixelInspectClick(e) {
     const visibleLayer = activeLayers.find(l => l._idxKey !== 'RGB' && map.hasLayer(l));
     if (!visibleLayer) {
         L.popup().setLatLng(e.latlng)
-            .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;">No visible index layer. Load and show a layer first.</div>')
+            .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;">' + (currentLang() === 'pl' ? 'Brak widocznej warstwy indeksu. Najpierw wczytaj i pokaż warstwę.' : 'No visible index layer. Load and show a layer first.') + '</div>')
             .openOn(map);
         return;
     }
@@ -166,14 +167,14 @@ async function onPixelInspectClick(e) {
     var currentZoom = map.getZoom();
     if (currentZoom < 15 || currentZoom > 19) {
         L.popup().setLatLng(e.latlng)
-            .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;">Zoom in to level 15–19 to inspect pixel values.</div>')
+            .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;">' + (currentLang() === 'pl' ? 'Przybliż mapę do poziomu 15–19, aby sprawdzić wartości piksela.' : 'Zoom in to level 15–19 to inspect pixel values.') + '</div>')
             .openOn(map);
         return;
     }
 
     var popup = L.popup({ maxWidth: 280, minWidth: 160, autoPan: true, closeOnClick: true, className: 'pixel-popup' })
         .setLatLng(e.latlng)
-        .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;color:#64748b;">Querying pixel values...</div>')
+        .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;color:#64748b;">' + (currentLang() === 'pl' ? 'Pobieranie wartości piksela...' : 'Querying pixel values...') + '</div>')
         .openOn(map);
 
     function checkPixelPopupZoom() {
@@ -195,7 +196,7 @@ async function onPixelInspectClick(e) {
         const data = await res.json();
 
         let html = '<div style="font-family:Inter,sans-serif;font-size:0.72rem;">';
-        html += '<div style="font-weight:700;margin-bottom:6px;color:#1e293b;">Pixel Values — ' + formatDate(date) + '</div>';
+        html += '<div style="font-weight:700;margin-bottom:6px;color:#1e293b;">' + (currentLang() === 'pl' ? 'Wartości piksela' : 'Pixel Values') + ' — ' + formatDate(date) + '</div>';
         html += '<div style="font-size:0.64rem;color:#94a3b8;margin-bottom:6px;">' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '</div>';
 
         for (const [idx, val] of Object.entries(data.values)) {
@@ -209,12 +210,12 @@ async function onPixelInspectClick(e) {
         }
 
         if (Object.keys(data.values).length === 0) {
-            html += '<div style="color:#94a3b8;font-style:italic;">No data at this location</div>';
+            html += '<div style="color:#94a3b8;font-style:italic;">' + (currentLang() === 'pl' ? 'Brak danych w tej lokalizacji' : 'No data at this location') + '</div>';
         }
         html += '</div>';
         popup.setContent(html);
     } catch (err) {
-        popup.setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;color:#dc2626;padding:4px;">Error: ' + err.message + '</div>');
+        popup.setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;color:#dc2626;padding:4px;">' + (currentLang() === 'pl' ? 'Błąd: ' : 'Error: ') + err.message + '</div>');
     }
 }
 
@@ -225,7 +226,7 @@ let aoiEditing = false;
 let editableLayers = [];
 
 function startEditAOI() {
-    if (!aoiLayer) { showToast('No AOI polygon to edit.', 'warning'); return; }
+    if (!aoiLayer) { showToast(currentLang() === 'pl' ? 'Brak poligonu AOI do edycji.' : 'No AOI polygon to edit.', 'warning'); return; }
     if (aoiEditing) { finishEditAOI(); return; }
 
     aoiEditing = true;
@@ -233,7 +234,7 @@ function startEditAOI() {
 
     const btn = document.getElementById('btn-edit-aoi');
     btn.classList.add('editing');
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> SAVE BOUNDARY <span class="edit-hint">(or double-click map)</span>';
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> ' + t('save_boundary') + ' <span class="edit-hint">' + t('save_boundary_hint') + '</span>';
 
     aoiLayer.eachLayer(function(layer) {
         if (layer.editing) {
@@ -276,7 +277,7 @@ function finishEditAOI() {
 
     const btn = document.getElementById('btn-edit-aoi');
     btn.classList.remove('editing');
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> EDIT BOUNDARY';
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> ' + t('edit_boundary');
 }
 
 // =========================================================================
@@ -287,20 +288,20 @@ let lastCoords = { lat: 0, lng: 0 };
 map.on('mousemove', function(e) {
     lastCoords = e.latlng;
     document.getElementById('coord-text').innerText =
-        'Lat: ' + e.latlng.lat.toFixed(5) + ', Lng: ' + e.latlng.lng.toFixed(5) + ' | Zoom: ' + map.getZoom();
+        (currentLang() === 'pl' ? 'Szer.: ' : 'Lat: ') + e.latlng.lat.toFixed(5) + ', ' + (currentLang() === 'pl' ? 'Dł.: ' : 'Lng: ') + e.latlng.lng.toFixed(5) + ' | Zoom: ' + map.getZoom();
 });
 
 map.on('zoomend', function() {
     document.getElementById('coord-text').innerText =
-        'Lat: ' + lastCoords.lat.toFixed(5) + ', Lng: ' + lastCoords.lng.toFixed(5) + ' | Zoom: ' + map.getZoom();
+        (currentLang() === 'pl' ? 'Szer.: ' : 'Lat: ') + lastCoords.lat.toFixed(5) + ', ' + (currentLang() === 'pl' ? 'Dł.: ' : 'Lng: ') + lastCoords.lng.toFixed(5) + ' | Zoom: ' + map.getZoom();
 });
 
 function copyCoords() {
-    const text = 'Lat: ' + lastCoords.lat.toFixed(5) + ', Lng: ' + lastCoords.lng.toFixed(5);
+    const text = (currentLang() === 'pl' ? 'Szer.: ' : 'Lat: ') + lastCoords.lat.toFixed(5) + ', ' + (currentLang() === 'pl' ? 'Dł.: ' : 'Lng: ') + lastCoords.lng.toFixed(5);
     navigator.clipboard.writeText(text).then(() => {
         const btn = document.querySelector('.coord-copy-btn');
         btn.innerText = '\u2713';
         setTimeout(() => { btn.innerHTML = '&#128203;'; }, 1500);
     });
 }
-
+

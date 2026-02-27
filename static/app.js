@@ -8,26 +8,38 @@ function toggleSetupCard() {
     document.getElementById('setup-body').classList.toggle('collapsed', !setupCardOpen);
     document.getElementById('setup-chevron').classList.toggle('collapsed', !setupCardOpen);
     var summary = document.getElementById('setup-summary');
+    if (!setupCardOpen) renderSetupSummary();
     summary.style.display = setupCardOpen ? 'none' : 'block';
+}
+
+function renderSetupSummary() {
+    var empty = '---';
+    var fieldName = document.getElementById('field_id').value.trim() || empty;
+    var start = document.getElementById('start_date').value;
+    var end = document.getElementById('end_date').value;
+    var indices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
+    var summary = document.getElementById('setup-summary');
+    summary.innerHTML =
+        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Pole' : 'Field') + '</span><span class="ss-value">' + fieldName + '</span></div>' +
+        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Okres' : 'Period') + '</span><span class="ss-value">' + (start || empty) + ' → ' + (end || empty) + '</span></div>' +
+        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Indeksy' : 'Indices') + '</span><span class="ss-value">' + (indices.length > 0 ? indices.join(', ') : empty) + '</span></div>';
 }
 
 function collapseSetupCard() {
     if (!setupCardOpen) return;
-    var fieldName = document.getElementById('field_id').value.trim() || 'Field';
-    var start = document.getElementById('start_date').value;
-    var end = document.getElementById('end_date').value;
-    var indices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
-
     var summary = document.getElementById('setup-summary');
-    summary.innerHTML =
-        '<div class="ss-row"><span class="ss-label">Field</span><span class="ss-value">' + fieldName + '</span></div>' +
-        '<div class="ss-row"><span class="ss-label">Period</span><span class="ss-value">' + (start || '—') + ' → ' + (end || '—') + '</span></div>' +
-        '<div class="ss-row"><span class="ss-label">Indices</span><span class="ss-value">' + (indices.length > 0 ? indices.join(', ') : 'none') + '</span></div>';
+    renderSetupSummary();
 
     setupCardOpen = false;
     document.getElementById('setup-body').classList.add('collapsed');
     document.getElementById('setup-chevron').classList.add('collapsed');
     summary.style.display = 'block';
+}
+
+function refreshSetupSummaryTranslations() {
+    const summary = document.getElementById('setup-summary');
+    if (!summary || setupCardOpen) return;
+    renderSetupSummary();
 }
 
 function expandSetupCard() {
@@ -45,7 +57,7 @@ function buildSummaryPanel(periodSummary, requestedIndices) {
     const panel = document.getElementById('summary-panel');
     if (!periodSummary || requestedIndices.length === 0) { panel.innerHTML = ''; return; }
 
-    let html = '<div class="stats-section-label">Period Averages</div><div class="stats-grid">';
+    let html = '<div class="stats-section-label">' + t('period_averages') + '</div><div class="stats-grid">';
     for (const idx of requestedIndices) {
         const val = periodSummary[idx];
         const info = INDEX_INFO[idx];
@@ -56,7 +68,7 @@ function buildSummaryPanel(periodSummary, requestedIndices) {
         html += '<div class="stat-tile">'
               + '  <div class="stat-label">' + shortName + '</div>'
               + '  <div class="stat-value">' + formatStatValue(idx, val) + '</div>'
-              + '  <div class="stat-avg-hint">period avg</div>'
+              + '  <div class="stat-avg-hint">' + t('period_avg') + '</div>'
               + '  <div class="stat-condition ' + cond.cls + '"><span class="dot"></span>' + cond.label + '</div>'
               + '</div>';
     }
@@ -86,30 +98,72 @@ function buildWarnings(periodSummary, requestedIndices, s2Count, lsCount) {
     if (missingS2.length > 0) {
         var names = missingS2.map(i => INDEX_INFO[i] ? INDEX_INFO[i].short : i).join(', ');
         if (hasS2Req && s2Count === 0) {
-            lines.push('<b>' + names + '</b> — no cloud-free <b>Sentinel-2</b> (optical) images found during this period.');
+            lines.push(t('warning_s2_no_images', { names: names }));
         } else {
-            lines.push('<b>' + names + '</b> — could not be computed (likely persistent cloud cover).');
+            lines.push(t('warning_cannot_compute_cloud', { names: names }));
         }
     }
     if (missingLs.length > 0) {
         var names = missingLs.map(i => INDEX_INFO[i] ? INDEX_INFO[i].short : i).join(', ');
         if (hasLsReq && lsCount === 0) {
-            lines.push('<b>' + names + '</b> — no cloud-free <b>Landsat 8/9</b> (thermal) images found. Thermal satellites revisit every 8–16 days.');
+            lines.push(t('warning_ls_no_images', { names: names }));
         } else {
-            lines.push('<b>' + names + '</b> — could not be computed (likely persistent cloud cover).');
+            lines.push(t('warning_cannot_compute_cloud', { names: names }));
         }
     }
 
     if (lines.length === 0) { panel.innerHTML = ''; return; }
 
     var html = '<div class="warning-box"><span class="warn-icon">&#9888;&#65039;</span><div>'
-        + '<div style="margin-bottom:4px;">Missing data for ' + missing.length + ' of ' + requestedIndices.length + ' indices:</div>'
+        + '<div style="margin-bottom:4px;">' + t('missing_data_title', { missing: missing.length, total: requestedIndices.length }) + '</div>'
         + '<ul style="margin:0;padding-left:18px;line-height:1.65;">'
         + lines.map(function(l) { return '<li>' + l + '</li>'; }).join('')
         + '</ul>'
-        + '<div style="margin-top:6px;font-size:0.66rem;opacity:0.8;">Try extending the date range or selecting a different time period.</div>'
+        + '<div style="margin-top:6px;font-size:0.66rem;opacity:0.8;">' + t('try_extend_period') + '</div>'
         + '</div></div>';
     panel.innerHTML = html;
+}
+
+function refreshResultsTranslations() {
+    if (!lastAnalysisData || !lastRequestedIndices || lastRequestedIndices.length === 0) return;
+
+    const periodSummary = lastAnalysisData.period_summary || {};
+    const timeseries = lastAnalysisData.timeseries || [];
+    buildSummaryPanel(periodSummary, lastRequestedIndices);
+
+    const s2Dates = timeseries.filter(ti => ti.sensor === 'Sentinel-2');
+    const lsDates = timeseries.filter(ti => ti.sensor === 'Landsat 8/9');
+    buildWarnings(periodSummary, lastRequestedIndices, s2Dates.length, lsDates.length);
+
+    const cont = document.getElementById('dates-container');
+    if (!cont || timeseries.length === 0) return;
+
+    const selected = new Set(
+        Array.from(cont.querySelectorAll('.date-checkbox:checked')).map(cb => cb.dataset.sensor + '|' + cb.value)
+    );
+
+    let html = '';
+    if (s2Dates.length > 0) {
+        html += '<div class="sensor-group">';
+        html += '<div class="sensor-header"><span class="sensor-badge s2">' + t('optical') + '</span><div class="sensor-meta"><span class="sensor-count">' + s2Dates.length + ' ' + t('dates_suffix') + '</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Sentinel-2\', this); return false;">' + t('all').toLowerCase() + '</a></div></div>';
+        s2Dates.forEach(ti => {
+            html += '<div class="date-row"><input type="checkbox" class="date-checkbox" value="' + ti.date + '" data-sensor="Sentinel-2"><span>' + formatDate(ti.date) + '</span></div>';
+        });
+        html += '</div>';
+    }
+    if (lsDates.length > 0) {
+        html += '<div class="sensor-group">';
+        html += '<div class="sensor-header"><span class="sensor-badge ls">' + t('thermal') + '</span><div class="sensor-meta"><span class="sensor-count">' + lsDates.length + ' ' + t('dates_suffix') + '</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Landsat 8/9\', this); return false;">' + t('all').toLowerCase() + '</a></div></div>';
+        lsDates.forEach(ti => {
+            html += '<div class="date-row"><input type="checkbox" class="date-checkbox" value="' + ti.date + '" data-sensor="Landsat 8/9"><span>' + formatDate(ti.date) + '</span></div>';
+        });
+        html += '</div>';
+    }
+    cont.innerHTML = html;
+
+    Array.from(cont.querySelectorAll('.date-checkbox')).forEach(function(cb) {
+        cb.checked = selected.has(cb.dataset.sensor + '|' + cb.value);
+    });
 }
 
 // =========================================================================
@@ -126,7 +180,7 @@ function prepareChartData(timeseries, requestedIndices) {
     document.getElementById('chart-popup').style.display = 'none';
     const btn = document.getElementById('btn-chart-toggle');
     btn.style.display = chartHasData ? 'flex' : 'none';
-    document.getElementById('btn-chart-text').innerText = 'SHOW TIME SERIES CHART';
+    document.getElementById('btn-chart-text').innerText = t('show_chart');
 }
 
 function toggleChartPopup() {
@@ -136,9 +190,9 @@ function toggleChartPopup() {
 
     if (chartPopupVisible && chartHasData && lastAnalysisData) {
         popup.style.display = 'flex';
-        btnText.innerText = 'HIDE TIME SERIES CHART';
+        btnText.innerText = t('hide_chart');
 
-        const fieldName = document.getElementById('field_id').value.trim() || 'Field';
+        const fieldName = document.getElementById('field_id').value.trim() || (currentLang() === 'pl' ? 'Pole' : 'Field');
         const start = document.getElementById('start_date').value;
         const end = document.getElementById('end_date').value;
         document.getElementById('chart-popup-sub').innerText = fieldName + ' \u00B7 ' + start + ' \u2192 ' + end;
@@ -154,7 +208,7 @@ function toggleChartPopup() {
             popup.classList.remove('closing');
             if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
         }, 150);
-        btnText.innerText = 'SHOW TIME SERIES CHART';
+        btnText.innerText = t('show_chart');
         chartPopupVisible = false;
     }
 }
@@ -173,7 +227,7 @@ function buildChartTabs() {
     allBtn.type = 'button';
     allBtn.className = 'chart-tab tab-all active';
     allBtn.dataset.filter = 'all';
-    allBtn.innerText = 'All';
+    allBtn.innerText = t('all');
     allBtn.onclick = function() { chartActiveFilter = 'all'; setActiveChartTab('all'); buildPopupChart(); };
     container.appendChild(allBtn);
 
@@ -294,16 +348,16 @@ async function startAnalysis() {
     const fieldInput = document.getElementById('field_id');
     if (!fieldInput.value.trim()) {
         const counter = localStorage.getItem('biomass_field_counter') || '1';
-        fieldInput.value = 'Field_' + counter;
+        fieldInput.value = (currentLang() === 'pl' ? 'Pole_' : 'Field_') + counter;
     }
     const field_id = fieldInput.value.trim();
     const start    = document.getElementById('start_date').value;
     const end      = document.getElementById('end_date').value;
     const indices  = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
 
-    if (!start || !end) { showToast('Please select a time period.', 'warning'); return; }
-    if (!currentAOI) { showToast('Please select an area of interest using one of the methods (Parcel Search, Map Click, or GeoJSON).', 'warning'); return; }
-    if (indices.length === 0) { showToast('Please select at least one index to compute.', 'warning'); return; }
+    if (!start || !end) { showToast(t('toast_time_period'), 'warning'); return; }
+    if (!currentAOI) { showToast(t('toast_select_aoi'), 'warning'); return; }
+    if (indices.length === 0) { showToast(t('toast_select_index'), 'warning'); return; }
 
     clearAllOverlays();
 
@@ -317,10 +371,10 @@ async function startAnalysis() {
     document.getElementById('warnings-panel').innerHTML = '';
     document.getElementById('btn-chart-toggle').style.display = 'none';
 
-    setStatus("Searching for cloud-free satellite images over your field...", "loading");
+    setStatus(t('status_searching'), "loading");
     setProgress(10);
     document.getElementById('btn-search').disabled = true;
-    document.getElementById('btn-search-text').innerText = 'SEARCHING...';
+    document.getElementById('btn-search-text').innerText = t('searching');
     document.getElementById('btn-search-spinner').style.display = 'inline-block';
 
     try {
@@ -364,7 +418,7 @@ async function startAnalysis() {
             document.getElementById('btn-chart-toggle').style.display = 'none';
             document.getElementById('btn-load').style.display = 'none';
             document.querySelector('#result-card label[style]').style.display = 'none';
-            setStatus("No cloud-free images were found for this period. Try a wider date range.", "warning");
+            setStatus(t('status_no_images'), "warning");
         } else {
             document.getElementById('btn-load').style.display = '';
             document.querySelector('#result-card label[style]').style.display = '';
@@ -377,7 +431,7 @@ async function startAnalysis() {
             let html = '';
             if (s2Dates.length > 0) {
                 html += '<div class="sensor-group">';
-                html += '<div class="sensor-header"><span class="sensor-badge s2">Optical</span><div class="sensor-meta"><span class="sensor-count">' + s2Dates.length + ' dates</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Sentinel-2\', this); return false;">all</a></div></div>';
+                html += '<div class="sensor-header"><span class="sensor-badge s2">' + t('optical') + '</span><div class="sensor-meta"><span class="sensor-count">' + s2Dates.length + ' ' + t('dates_suffix') + '</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Sentinel-2\', this); return false;">' + t('all').toLowerCase() + '</a></div></div>';
                 s2Dates.forEach(t => {
                     html += '<div class="date-row"><input type="checkbox" class="date-checkbox" value="' + t.date + '" data-sensor="Sentinel-2"><span>' + formatDate(t.date) + '</span></div>';
                 });
@@ -385,7 +439,7 @@ async function startAnalysis() {
             }
             if (lsDates.length > 0) {
                 html += '<div class="sensor-group">';
-                html += '<div class="sensor-header"><span class="sensor-badge ls">Thermal</span><div class="sensor-meta"><span class="sensor-count">' + lsDates.length + ' dates</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Landsat 8/9\', this); return false;">all</a></div></div>';
+                html += '<div class="sensor-header"><span class="sensor-badge ls">' + t('thermal') + '</span><div class="sensor-meta"><span class="sensor-count">' + lsDates.length + ' ' + t('dates_suffix') + '</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Landsat 8/9\', this); return false;">' + t('all').toLowerCase() + '</a></div></div>';
                 lsDates.forEach(t => {
                     html += '<div class="date-row"><input type="checkbox" class="date-checkbox" value="' + t.date + '" data-sensor="Landsat 8/9"><span>' + formatDate(t.date) + '</span></div>';
                 });
@@ -396,7 +450,7 @@ async function startAnalysis() {
 
             const total = s2Dates.length + lsDates.length;
             const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-            setStatus("Analysis complete — " + total + " cloud-free observations found in " + elapsed + "s.", "success");
+            setStatus(t('status_complete', { total: total, elapsed: elapsed }), "success");
 
             if (field_id && currentAOI) saveFieldToRecent(field_id, currentAOI, null);
         }
@@ -412,7 +466,7 @@ async function startAnalysis() {
     }
 
     document.getElementById('btn-search').disabled = false;
-    document.getElementById('btn-search-text').innerText = 'SEARCH FOR IMAGES';
+    document.getElementById('btn-search-text').innerText = t('search_images');
     document.getElementById('btn-search-spinner').style.display = 'none';
 }
 
@@ -424,13 +478,13 @@ async function loadSelectedLayers() {
         .map(cb => ({ date: cb.value, sensor: cb.dataset.sensor }));
     const allIndices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
 
-    if (checkedItems.length === 0) { showToast('Please select at least one date from the list above.', 'warning'); return; }
-    if (!currentAOI) { showToast('No area of interest set.', 'warning'); return; }
+    if (checkedItems.length === 0) { showToast(t('toast_select_date'), 'warning'); return; }
+    if (!currentAOI) { showToast(t('toast_no_aoi'), 'warning'); return; }
 
-    setStatus("Generating map overlays...", "loading");
+    setStatus(currentLang() === 'pl' ? 'Generowanie nakładek mapowych...' : "Generating map overlays...", "loading");
     setProgress(5);
     document.getElementById('btn-load').disabled = true;
-    document.getElementById('btn-load-text').innerText = 'LOADING...';
+    document.getElementById('btn-load-text').innerText = t('loading');
     document.getElementById('btn-load-spinner').style.display = 'inline-block';
     zoomToAOI();
 
@@ -475,7 +529,7 @@ async function loadSelectedLayers() {
         if (result.status === 'error') {
             console.error('Batch failed for', result.date, result.error);
             failed++;
-            setStatus("Loading layers... " + completedDates + " / " + totalDates + " dates processed", "loading");
+            setStatus(t('status_loading_overlays', { done: completedDates, total: totalDates, elapsed: '' }), "loading");
             continue;
         }
 
@@ -508,7 +562,7 @@ async function loadSelectedLayers() {
             }
             loaded++;
         }
-        setStatus("Loading layers... " + completedDates + " / " + totalDates + " dates processed" + elapsed, "loading");
+        setStatus(t('status_loading_overlays', { done: completedDates, total: totalDates, elapsed: elapsed }), "loading");
     }
 
     if (!layersPanelOpen && loaded > 0) toggleLayersPanel();
@@ -516,12 +570,12 @@ async function loadSelectedLayers() {
     setProgress(100);
     setTimeout(() => setProgress(-1), 600);
 
-    if (failed > 0 && loaded > 0) setStatus("Map layers loaded (" + loaded + " OK, " + failed + " date(s) failed). Toggle layers in the panel.", "warning");
-    else if (loaded > 0) setStatus("Map ready — " + loaded + " layers loaded. Toggle visibility in the layer panel.", "success");
-    else setStatus("Could not load any map layers. The selected dates may not have matching index data.", "error");
+    if (failed > 0 && loaded > 0) setStatus(t('status_layers_partial', { loaded: loaded, failed: failed }), "warning");
+    else if (loaded > 0) setStatus(t('status_layers_ready', { loaded: loaded }), "success");
+    else setStatus(t('status_layers_none'), "error");
 
     document.getElementById('btn-load').disabled = false;
-    document.getElementById('btn-load-text').innerText = 'VISUALIZE ON MAP';
+    document.getElementById('btn-load-text').innerText = t('visualize_map');
     document.getElementById('btn-load-spinner').style.display = 'none';
 }
 
@@ -575,6 +629,11 @@ function closeMobileSidebar() {
 document.addEventListener('keydown', function(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
 
+    if ((e.key === 'W' || e.key === 'w') && e.shiftKey) {
+        openWelcomePanel();
+        return;
+    }
+
     switch (e.key) {
         case 'Escape':
             cancelMeasure();
@@ -609,17 +668,20 @@ document.addEventListener('keydown', function(e) {
 (function initFieldName() {
     const counter = parseInt(localStorage.getItem('biomass_field_counter') || '0', 10) + 1;
     localStorage.setItem('biomass_field_counter', counter);
-    document.getElementById('field_id').placeholder = 'e.g. Field_' + counter;
+    document.getElementById('field_id').placeholder = (currentLang() === 'pl' ? 'np. Pole_' : 'e.g. Field_') + counter;
 })();
 
 // =========================================================================
-//  DATE AUTO-SUGGESTION (end date = start + 30 days)
+//  DATE AUTO-SUGGESTION (end date = start + 1 month)
 // =========================================================================
 document.getElementById('start_date').addEventListener('change', function() {
     const endInput = document.getElementById('end_date');
     if (this.value && !endInput.value) {
         const start = new Date(this.value);
-        start.setDate(start.getDate() + 30);
+        const day = start.getDate();
+        start.setMonth(start.getMonth() + 1);
+        // If month rollover overflowed day (e.g. Jan 31 -> Mar 3), clamp to last day of previous month.
+        if (start.getDate() < day) start.setDate(0);
         endInput.value = start.toISOString().split('T')[0];
     }
 });
@@ -644,14 +706,14 @@ function validateDates() {
     var today = new Date().toISOString().split('T')[0];
     if (start && start > today) {
         startEl.classList.add('input-error');
-        msgEl.textContent = 'Start date is in the future — no satellite data available.';
+        msgEl.textContent = t('validation_start_future');
         msgEl.classList.add('val-error', 'visible');
         updateSearchBtn();
         return false;
     }
     if (end && end > today) {
         endEl.classList.add('input-error');
-        msgEl.textContent = 'End date is in the future — no satellite data available yet.';
+        msgEl.textContent = t('validation_end_future');
         msgEl.classList.add('val-error', 'visible');
         updateSearchBtn();
         return false;
@@ -661,7 +723,7 @@ function validateDates() {
         if (end < start) {
             startEl.classList.add('input-error');
             endEl.classList.add('input-error');
-            msgEl.textContent = 'End date must be after the start date.';
+            msgEl.textContent = t('validation_end_before_start');
             msgEl.classList.add('val-error', 'visible');
             updateSearchBtn();
             return false;
@@ -669,7 +731,7 @@ function validateDates() {
         var diffMs = new Date(end) - new Date(start);
         var diffDays = Math.round(diffMs / 86400000);
         if (diffDays > 365) {
-            msgEl.textContent = 'Range is ' + diffDays + ' days — very long periods may be slow.';
+            msgEl.textContent = t('validation_long_range', { days: diffDays });
             msgEl.classList.add('val-error', 'visible');
         }
         startEl.classList.add('input-success');
@@ -698,11 +760,11 @@ document.getElementById('end_date').addEventListener('change', validateDates);
                 throw new Error('Not a valid coordinates array');
             }
             textarea.classList.add('input-success');
-            msgEl.textContent = 'Valid coordinate array (' + coords[0].length + ' vertices).';
+            msgEl.textContent = t('validation_geojson_ok', { count: coords[0].length });
             msgEl.classList.add('val-success', 'visible');
         } catch(e) {
             textarea.classList.add('input-error');
-            msgEl.textContent = 'Invalid JSON — expected [[[lon, lat], ...]].';
+            msgEl.textContent = t('validation_geojson_bad');
             msgEl.classList.add('val-error', 'visible');
         }
     });
@@ -779,6 +841,18 @@ toggleAboutPanel = function() {
 // =========================================================================
 function startOnboardingTour() {
     if (typeof window.driver === 'undefined') return;
+    const sidebarEl = document.getElementById('sidebar');
+    const layersBodyEl = document.getElementById('lp-body');
+    const tourUiState = {
+        sidebarWasCollapsed: !!(sidebarEl && sidebarEl.classList.contains('collapsed')),
+        setupWasCollapsed: !setupCardOpen,
+        layersWasCollapsed: !!(layersBodyEl && layersBodyEl.style.display === 'none')
+    };
+
+    // Ensure guided elements are visible before starting tour.
+    if (tourUiState.sidebarWasCollapsed) toggleSidebar();
+    if (tourUiState.setupWasCollapsed) expandSetupCard();
+    if (tourUiState.layersWasCollapsed) toggleLayersPanel();
 
     const driverObj = window.driver.js.driver({
         showProgress: true,
@@ -787,21 +861,21 @@ function startOnboardingTour() {
         stagePadding: 8,
         stageRadius: 12,
         popoverClass: 'biomass-tour-popover',
-        nextBtnText: 'Next &rarr;',
-        prevBtnText: '&larr; Back',
-        doneBtnText: 'Start exploring!',
+        nextBtnText: t('tour_next'),
+        prevBtnText: t('tour_prev'),
+        doneBtnText: t('tour_done'),
         steps: [
             {
                 popover: {
-                    title: 'Welcome to Biomass Explorer! 🌍',
-                    description: 'This tool uses Sentinel-2 and Landsat satellite imagery to monitor crop health, vegetation, and drought over your fields.<br><br>Let\'s take a quick tour of the key features. You can replay this guide anytime by pressing <kbd>G</kbd>.',
+                    title: t('tour_welcome_title'),
+                    description: t('tour_welcome_desc_html'),
                 }
             },
             {
                 element: '#setup-card',
                 popover: {
-                    title: 'Step 1 — Analysis Setup',
-                    description: 'This panel has three sections:<br>• <b>Field & Time</b> — name your field and pick a date range<br>• <b>Indices</b> — choose which vegetation or drought indices to compute<br>• <b>Area of Interest</b> — select your field boundary',
+                    title: t('tour_setup_title'),
+                    description: t('tour_setup_desc_html'),
                     side: 'right',
                     align: 'start'
                 }
@@ -809,63 +883,114 @@ function startOnboardingTour() {
             {
                 element: '#aoi-tabs',
                 popover: {
-                    title: 'Choose Your Field',
-                    description: '<b>Parcel Search</b> — find by cadastral ID or region name<br><b>Map Click</b> — click directly on the map<br><b>GeoJSON</b> — paste custom coordinates<br><br>After loading, an <em>Edit Boundary</em> button lets you adjust the polygon.',
+                    title: t('tour_aoi_title'),
+                    description: t('tour_aoi_desc_html'),
                     side: 'right'
                 }
             },
             {
                 element: '#btn-search',
                 popover: {
-                    title: 'Run the Analysis',
-                    description: 'After setting your AOI, dates, and indices — click here to search for cloud-free satellite images. Results will appear below with period averages and available dates.',
+                    title: t('tour_run_title'),
+                    description: t('tour_run_desc_html'),
                     side: 'right'
                 }
             },
             {
                 element: '#map',
                 popover: {
-                    title: 'Interactive Map',
-                    description: 'Your field boundary and satellite index overlays appear here. After running an analysis, select dates and click <b>Visualize on Map</b> to load layers.',
+                    title: t('tour_map_title'),
+                    description: t('tour_map_desc_html'),
                     side: 'left'
                 }
             },
             {
                 element: '#map-tools',
                 popover: {
-                    title: 'Map Tools',
-                    description: 'Four tools at your disposal:<br>• <b>Ruler</b> — measure distances<br>• <b>Polygon</b> — measure areas<br>• <b>Info</b> — click any pixel to see its index value<br>• <b>Target</b> — recenter on your field (appears after AOI is set)',
+                    title: t('tour_tools_title'),
+                    description: t('tour_tools_desc_html'),
                     side: 'right'
                 }
             },
             {
                 element: '#layers-panel',
                 popover: {
-                    title: 'Layer Control',
-                    description: 'Switch between Satellite and Street base maps, toggle cadastral boundaries, and manage loaded index overlays. The opacity slider controls overlay transparency.',
+                    title: t('tour_layers_title'),
+                    description: t('tour_layers_desc_html'),
                     side: 'left'
                 }
             },
             {
                 element: '#btn-dark-mode',
                 popover: {
-                    title: 'Keyboard Shortcuts',
-                    description: '<kbd>D</kbd> Dark mode &middot; <kbd>L</kbd> Layers panel &middot; <kbd>F</kbd> Recenter on field &middot; <kbd>G</kbd> This guided tour &middot; <kbd>?</kbd> About panel &middot; <kbd>Esc</kbd> Cancel tools',
+                    title: t('tour_shortcuts_title'),
+                    description: t('tour_shortcuts_desc_html'),
                     side: 'bottom'
                 }
             }
         ],
         onDestroyed: function() {
             localStorage.setItem('biomass_tour_done', '1');
+            // Restore previous layout state after tour closes.
+            if (tourUiState.setupWasCollapsed) collapseSetupCard();
+            if (tourUiState.layersWasCollapsed) toggleLayersPanel();
+            if (tourUiState.sidebarWasCollapsed) toggleSidebar();
         }
     });
 
-    driverObj.drive();
+    // Wait for sidebar animation if we had to open it.
+    setTimeout(function() { driverObj.drive(); }, tourUiState.sidebarWasCollapsed ? 340 : 40);
+}
+
+function initWelcomePanel() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (!overlay) return;
+    const langBtns = overlay.querySelectorAll('.welcome-lang-btn');
+    const continueBtn = document.getElementById('welcome-continue');
+    let selectedLang = localStorage.getItem('biomass_lang') || 'en';
+    if (!selectedLang || (selectedLang !== 'en' && selectedLang !== 'pl')) selectedLang = 'en';
+
+    function syncLangButtons() {
+        langBtns.forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.lang === selectedLang);
+        });
+    }
+
+    langBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            selectedLang = this.dataset.lang || 'en';
+            syncLangButtons();
+        });
+    });
+
+    continueBtn.addEventListener('click', function() {
+        setLanguage(selectedLang);
+        overlay.style.display = 'none';
+        localStorage.setItem('biomass_welcome_done', '1');
+        if (!localStorage.getItem('biomass_tour_done')) setTimeout(startOnboardingTour, 120);
+    });
+
+    syncLangButtons();
+}
+
+function openWelcomePanel() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
 }
 
 // Auto-start tour on first visit only
 (function checkOnboarding() {
-    if (!localStorage.getItem('biomass_tour_done')) {
+    initWelcomePanel();
+    const welcomeDone = localStorage.getItem('biomass_welcome_done');
+    const tourDone = localStorage.getItem('biomass_tour_done');
+    const welcomeOverlay = document.getElementById('welcome-overlay');
+    if (!welcomeDone && welcomeOverlay) {
+        welcomeOverlay.style.display = 'flex';
+    } else if (!tourDone) {
         setTimeout(startOnboardingTour, 800);
     }
 })();
+
+window.refreshResultsTranslations = refreshResultsTranslations;
+window.refreshSetupSummaryTranslations = refreshSetupSummaryTranslations;

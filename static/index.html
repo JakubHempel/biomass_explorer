@@ -21,6 +21,19 @@
 <body>
 <script>if(localStorage.getItem('biomass_dark_mode')==='1')document.body.classList.add('dark-mode');</script>
 
+<div id="welcome-overlay" class="welcome-overlay" style="display:none;" role="dialog" aria-modal="true" aria-label="Welcome">
+    <div class="welcome-card">
+        <img src="/static/radscan_logo_color.jpg" class="welcome-logo" alt="Radscan logo">
+        <h2 id="welcome-title">Welcome to Biomass Explorer</h2>
+        <p id="welcome-subtitle">Choose your language to continue. You can change it later in the header.</p>
+        <div class="welcome-lang-buttons">
+            <button type="button" id="welcome-lang-en" class="welcome-lang-btn" data-lang="en">English</button>
+            <button type="button" id="welcome-lang-pl" class="welcome-lang-btn active" data-lang="pl">Polski</button>
+        </div>
+        <button type="button" id="welcome-continue" class="welcome-continue-btn">Continue</button>
+    </div>
+</div>
+
 <!-- Mobile sidebar overlay -->
 <div class="mobile-overlay" id="mobile-overlay" onclick="closeMobileSidebar()"></div>
 
@@ -29,11 +42,15 @@
     <!-- Brand banner -->
     <header class="app-header">
         <div class="app-header-inner">
-            <span class="app-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span>
+            <img src="/static/radscan_logo_color.jpg" class="app-logo" alt="Radscan logo">
             <div>
-                <h2 class="app-title">Biomass Explorer</h2>
-                <span class="app-subtitle">Crop monitoring from space</span>
+                <h2 class="app-title" id="app-title">Biomass Explorer</h2>
+                <span class="app-subtitle" id="app-subtitle">Crop monitoring from space</span>
             </div>
+            <select id="lang-switch" class="lang-switch" onchange="setLanguage(this.value)" aria-label="Language switcher" title="Language">
+                <option value="en">EN</option>
+                <option value="pl">PL</option>
+            </select>
             <button type="button" class="header-dark-btn" id="btn-dark-mode" onclick="toggleDarkMode()" title="Toggle dark/light mode" aria-label="Toggle dark mode">&#9789;</button>
             <button type="button" class="header-info-btn" id="btn-about" onclick="toggleAboutPanel()" title="About this tool" aria-label="About this tool">&#9432;</button>
         </div>
@@ -238,13 +255,6 @@
                 <span id="btn-load-text">VISUALIZE ON MAP</span>
                 <span id="btn-load-spinner" class="spinner" style="display:none;"></span>
             </button>
-        </div>
-
-        <div id="status" role="status" aria-live="polite">
-            <span id="status-text">Ready to start.</span>
-            <div id="progress-bar" class="progress-bar" style="display:none;">
-                <div id="progress-fill" class="progress-fill"></div>
-            </div>
         </div>
 
     </div>
