@@ -2,6 +2,177 @@
 //  COLLAPSIBLE SETUP CARD
 // =========================================================================
 let setupCardOpen = true;
+let persistentStressLayer = null;
+
+function clearPersistentStressLayer() {
+    if (persistentStressLayer && map && map.hasLayer(persistentStressLayer)) {
+        map.removeLayer(persistentStressLayer);
+    }
+    activeLayers = activeLayers.filter(function(layer) { return layer !== persistentStressLayer; });
+    const stressRow = document.querySelector('.lp-overlay-row[data-persistent-stress="1"]');
+    if (stressRow) stressRow.remove();
+    updateLayerCount();
+    persistentStressLayer = null;
+}
+
+async function refreshPersistentStressLayer(fieldId, start, end) {
+    if (!currentAOI || !start || !end) return;
+
+    try {
+        const res = await fetch(API_URL + '/visualize/map', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                field_id: fieldId,
+                start_date: start,
+                end_date: end,
+                indices: ['STRESS_HOTSPOTS'],
+                geojson: currentAOI,
+                cloud_cover: 20
+            })
+        });
+        if (!res.ok) return;
+
+        const layer = await res.json();
+        const hotspotNativeScale = Number(layer.native_scale || 10);
+        const nextLayer = L.tileLayer(layer.layer_url, {
+            opacity: 1.0,
+            maxNativeZoom: maxNativeZoomForScale(hotspotNativeScale),
+            maxZoom: 22,
+            zIndex: 1090,
+            pane: 'analysisPane'
+        });
+        nextLayer._idxKey = 'STRESS_HOTSPOTS';
+        // Keep a real ISO date for pixel queries, and store period label separately for UI.
+        nextLayer._date = end || start || '';
+        nextLayer._displayDate = (start && end) ? (start + ' → ' + end) : (end || start || '');
+        nextLayer._sensor = '';
+
+        clearPersistentStressLayer();
+        persistentStressLayer = nextLayer;
+        persistentStressLayer._persistentStress = true;
+        activeLayers.push(persistentStressLayer);
+        persistentStressLayer.addTo(map);
+        if (typeof persistentStressLayer.bringToFront === 'function') persistentStressLayer.bringToFront();
+        const stressCb = addOverlayToPanel(persistentStressLayer, 'STRESS_HOTSPOTS', persistentStressLayer._displayDate, '');
+        const stressRow = document.querySelector('#lp-overlays .lp-overlay-row:last-child');
+        if (stressRow) stressRow.dataset.persistentStress = '1';
+        if (stressCb) stressCb.checked = true;
+        ensureLegendTab('STRESS_HOTSPOTS');
+        updateLegend('STRESS_HOTSPOTS');
+    } catch (e) {
+        // Keep UI responsive even if hotspot layer fails.
+    }
+}
+
+function maxNativeZoomForScale(scaleMeters) {
+    if (!scaleMeters || scaleMeters <= 0) return 15;
+    const webMercatorMppAtZoom0 = 156543.03392804097;
+    const zoom = Math.round(Math.log2(webMercatorMppAtZoom0 / scaleMeters)) + 1;
+    return Math.max(8, Math.min(22, zoom));
+}
+
+function ensureLegendTab(idx) {
+    if (idx === 'RGB') return;
+    const tabs = document.getElementById('legend-tabs');
+    if (!tabs) return;
+    if (Array.from(tabs.querySelectorAll('.leg-tab')).some(t => t.dataset.idx === idx)) return;
+    const info = (typeof getIndexInfo === 'function') ? getIndexInfo(idx) : INDEX_INFO[idx];
+    const btn = document.createElement('div');
+    btn.className = 'leg-tab';
+    btn.dataset.idx = idx;
+    btn.innerText = info ? info.short : idx;
+    btn.onclick = () => updateLegend(idx);
+    tabs.appendChild(btn);
+}
+
+function getAnalysisIndices() {
+    return AUTO_ANALYSIS_INDICES.slice();
+}
+
+function getManualSelectedIndices() {
+    return Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
+}
+
+function _normHigher(v, low, high) {
+    if (v == null) return null;
+    return Math.max(0, Math.min(1, (v - low) / (high - low)));
+}
+
+function _normLower(v, low, high) {
+    if (v == null) return null;
+    return Math.max(0, Math.min(1, (high - v) / (high - low)));
+}
+
+function computeFastScoreFromSummary(summary) {
+    var components = [
+        { k: 'VHI', w: 0.40, n: _normHigher(summary.VHI, 20, 70) },
+        { k: 'TCI', w: 0.20, n: _normHigher(summary.TCI, 20, 80) },
+        { k: 'NDVI', w: 0.20, n: _normHigher(summary.NDVI, 0.20, 0.70) },
+        { k: 'NDMI', w: 0.15, n: _normHigher(summary.NDMI, -0.10, 0.30) },
+        { k: 'TVDI', w: 0.05, n: _normLower(summary.TVDI, 0.20, 0.80) }
+    ];
+    var weighted = 0;
+    var totalW = 0;
+    components.forEach(function(c) {
+        if (c.n == null) return;
+        weighted += c.n * c.w;
+        totalW += c.w;
+    });
+    if (totalW <= 0) return null;
+    return (weighted / totalW) * 10;
+}
+
+function _dateOnly(s) {
+    return String(s || '').slice(0, 10);
+}
+
+async function fetchTrendInfo(fieldId, startDate, endDate, currentScore) {
+    try {
+        const res = await fetch(API_URL + '/history/' + encodeURIComponent(fieldId));
+        if (!res.ok) return null;
+        const records = await res.json();
+        if (!Array.isArray(records) || records.length === 0) return null;
+
+        const start = new Date(startDate + 'T00:00:00');
+        const end = new Date(endDate + 'T00:00:00');
+        const periodDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
+        const prevEnd = new Date(start.getTime() - 86400000);
+        const prevStart = new Date(prevEnd.getTime() - (periodDays - 1) * 86400000);
+
+        const sums = { NDVI: 0, NDMI: 0, TCI: 0, TVDI: 0, VHI: 0 };
+        const counts = { NDVI: 0, NDMI: 0, TCI: 0, TVDI: 0, VHI: 0 };
+        records.forEach(function(r) {
+            const d = new Date(_dateOnly(r.date) + 'T00:00:00');
+            if (d < prevStart || d > prevEnd) return;
+            const map = { NDVI: r.ndvi, NDMI: r.ndmi, TCI: r.tci, TVDI: r.tvdi, VHI: r.vhi };
+            Object.keys(map).forEach(function(k) {
+                const v = map[k];
+                if (v == null || Number.isNaN(Number(v))) return;
+                sums[k] += Number(v);
+                counts[k] += 1;
+            });
+        });
+
+        const prevSummary = {};
+        Object.keys(sums).forEach(function(k) {
+            prevSummary[k] = counts[k] > 0 ? (sums[k] / counts[k]) : null;
+        });
+        const prevScore = computeFastScoreFromSummary(prevSummary);
+        if (prevScore == null) return null;
+        const delta = currentScore - prevScore;
+        return { prevScore: prevScore, delta: delta };
+    } catch (e) {
+        return null;
+    }
+}
+
+function updatePrimaryActionButtonLabel() {
+    var textEl = document.getElementById('btn-search-text');
+    if (!textEl) return;
+    var isManualMode = getManualSelectedIndices().length > 0;
+    textEl.innerText = isManualMode ? t('search_images') : t('check_field_condition');
+}
 
 function toggleSetupCard() {
     setupCardOpen = !setupCardOpen;
@@ -17,12 +188,14 @@ function renderSetupSummary() {
     var fieldName = document.getElementById('field_id').value.trim() || empty;
     var start = document.getElementById('start_date').value;
     var end = document.getElementById('end_date').value;
-    var indices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
+    var indicesLabel = t('auto_indices_short');
+    var manual = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
+    if (manual.length > 0) indicesLabel = manual.join(', ');
     var summary = document.getElementById('setup-summary');
     summary.innerHTML =
         '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Pole' : 'Field') + '</span><span class="ss-value">' + fieldName + '</span></div>' +
         '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Okres' : 'Period') + '</span><span class="ss-value">' + (start || empty) + ' → ' + (end || empty) + '</span></div>' +
-        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Indeksy' : 'Indices') + '</span><span class="ss-value">' + (indices.length > 0 ? indices.join(', ') : empty) + '</span></div>';
+        '<div class="ss-row"><span class="ss-label">' + t('indices') + '</span><span class="ss-value">' + indicesLabel + '</span></div>';
 }
 
 function collapseSetupCard() {
@@ -51,14 +224,117 @@ function expandSetupCard() {
 }
 
 // =========================================================================
-//  SUMMARY STATISTICS PANEL  (simple — period average only)
+//  SUMMARY STATISTICS PANEL
 // =========================================================================
-function buildSummaryPanel(periodSummary, requestedIndices) {
-    const panel = document.getElementById('summary-panel');
-    if (!periodSummary || requestedIndices.length === 0) { panel.innerHTML = ''; return; }
+function buildFieldConditionCard(fieldCondition, context) {
+    if (!fieldCondition) return '';
+    context = context || {};
+    var drivers = fieldCondition.drivers || [];
+    var timeseriesCount = context.timeseriesCount || 0;
+    var labelMap = {
+        Healthy: t('label_healthy'),
+        'Mostly healthy': t('label_mostly_healthy'),
+        Watch: t('label_watch'),
+        Stressed: t('label_stressed'),
+        Critical: t('label_critical')
+    };
+    var localizedLabel = labelMap[fieldCondition.label] || fieldCondition.label;
+    var driverNameMap = {
+        NDVI: t('driver_ndvi'),
+        NDMI: t('driver_ndmi'),
+        VHI: t('driver_vhi'),
+        TCI: t('driver_tci'),
+        TVDI: t('driver_tvdi')
+    };
+    var driverActionMap = {
+        NDVI: t('driver_action_ndvi'),
+        NDMI: t('driver_action_ndmi'),
+        VHI: t('driver_action_vhi'),
+        TCI: t('driver_action_tci'),
+        TVDI: t('driver_action_tvdi')
+    };
+    function severityLabel(pct) {
+        if (pct >= 75) return t('severity_high');
+        if (pct >= 45) return t('severity_moderate');
+        return t('severity_watch');
+    }
+    function stressLevelLabel(pct) {
+        if (pct >= 70) return t('stress_level_high');
+        if (pct >= 40) return t('stress_level_medium');
+        return t('stress_level_low');
+    }
+    var summaryText = '';
+    if (fieldCondition.label === 'Healthy') summaryText = t('field_condition_msg_healthy');
+    else if (fieldCondition.label === 'Mostly healthy') summaryText = t('field_condition_msg_mostly');
+    else if (fieldCondition.label === 'Watch') summaryText = t('field_condition_msg_watch');
+    else if (fieldCondition.label === 'Stressed') summaryText = t('field_condition_msg_stressed');
+    else summaryText = t('field_condition_msg_critical');
+    var coreCount = fieldCondition.index_breakdown ? Object.keys(fieldCondition.index_breakdown).length : 0;
+    var confidenceReason = t('field_condition_conf_reason', {
+        obs: timeseriesCount,
+        core: coreCount
+    });
+    var scoreLegendHover = '<div class="field-score-hover-legend">'
+        + '<div>0-3 ' + t('label_critical') + '</div>'
+        + '<div>3-5 ' + t('label_stressed') + '</div>'
+        + '<div>5-7 ' + t('label_watch') + '</div>'
+        + '<div>7-8.5 ' + t('label_mostly_healthy') + '</div>'
+        + '<div>8.5-10 ' + t('label_healthy') + '</div>'
+        + '</div>';
 
-    let html = '<div class="stats-section-label">' + t('period_averages') + '</div><div class="stats-grid">';
+    var driversHtml = drivers.length > 0
+        ? '<ul class="fc-drivers">' + drivers.map(function(d) {
+            var name = driverNameMap[d.index] || d.index;
+            var action = driverActionMap[d.index] || t('driver_action_default');
+            return '<li><b>' + name + '</b>: ' + severityLabel(d.damaged_pct) + ' - ' + action + '</li>';
+        }).join('') + '</ul>'
+        : '<div class="fc-empty">' + t('field_condition_no_drivers') + '</div>';
+
+    return '<div class="field-condition-card">'
+        + '<div class="field-condition-head">'
+        + '  <div class="field-condition-title">' + t('field_condition_title') + '</div>'
+        + '  <div class="field-condition-label">' + localizedLabel + '</div>'
+        + '</div>'
+        + '<div class="field-condition-score-row">'
+        + '  <div class="field-condition-score-wrap">'
+        + '    <div class="field-condition-score">' + fieldCondition.score_0_10.toFixed(1) + '</div>'
+        + '    <div class="field-condition-scale">/ 10</div>'
+        +       scoreLegendHover
+        + '  </div>'
+        + '</div>'
+        + '<div class="field-condition-meta">'
+        + '  <span>' + t('field_condition_confidence') + ': <b>' + fieldCondition.confidence + '</b></span>'
+        + '  <span>' + t('field_condition_stress_level') + ': <b>' + stressLevelLabel(fieldCondition.damaged_area_pct) + '</b></span>'
+        + '</div>'
+        + '<div class="field-condition-conf-note">' + confidenceReason + '</div>'
+        + '<div class="field-condition-summary">' + summaryText + '</div>'
+        + '<div class="field-condition-drivers-title">' + t('field_condition_drivers') + '</div>'
+        + driversHtml
+        + '</div>';
+}
+
+function toggleTechnicalSummary() {
+    var details = document.getElementById('technical-summary-details');
+    var btn = document.getElementById('btn-toggle-technical-summary');
+    if (!details || !btn) return;
+    var isHidden = details.style.display === 'none';
+    details.style.display = isHidden ? 'block' : 'none';
+    btn.innerText = isHidden ? t('hide_technical_indices') : t('show_technical_indices');
+}
+
+function buildSummaryPanel(periodSummary, requestedIndices, fieldCondition, showTechnicalDetails) {
+    const panel = document.getElementById('summary-panel');
+    if (!periodSummary) { panel.innerHTML = ''; return; }
+
+    let html = '';
+    html += buildFieldConditionCard(fieldCondition, {
+        timeseriesCount: lastAnalysisData && lastAnalysisData.timeseries ? lastAnalysisData.timeseries.length : 0
+    });
+    if (showTechnicalDetails) {
+        html += '<div class="stats-section-label">' + t('period_averages') + '</div><div class="stats-grid">';
+    }
     for (const idx of requestedIndices) {
+        if (!showTechnicalDetails) break;
         const val = periodSummary[idx];
         const info = INDEX_INFO[idx];
         const shortName = info ? info.short : idx;
@@ -72,12 +348,14 @@ function buildSummaryPanel(periodSummary, requestedIndices) {
               + '  <div class="stat-condition ' + cond.cls + '"><span class="dot"></span>' + cond.label + '</div>'
               + '</div>';
     }
-    html += '</div>';
+    if (showTechnicalDetails) html += '</div>';
     panel.innerHTML = html;
-    panel.querySelectorAll('.stat-tile').forEach(function(tile, i) {
-        tile.classList.add('stat-tile-animate');
-        tile.style.animationDelay = (i * 0.05) + 's';
-    });
+    if (showTechnicalDetails) {
+        panel.querySelectorAll('.stat-tile').forEach(function(tile, i) {
+            tile.classList.add('stat-tile-animate');
+            tile.style.animationDelay = (i * 0.05) + 's';
+        });
+    }
 }
 
 // =========================================================================
@@ -125,15 +403,24 @@ function buildWarnings(periodSummary, requestedIndices, s2Count, lsCount) {
 }
 
 function refreshResultsTranslations() {
-    if (!lastAnalysisData || !lastRequestedIndices || lastRequestedIndices.length === 0) return;
+    if (!lastAnalysisData || !lastRequestedIndices) return;
 
     const periodSummary = lastAnalysisData.period_summary || {};
     const timeseries = lastAnalysisData.timeseries || [];
-    buildSummaryPanel(periodSummary, lastRequestedIndices);
+    buildSummaryPanel(
+        periodSummary,
+        lastRequestedIndices,
+        lastAnalysisData.field_condition || null,
+        !!lastManualIndexSelection
+    );
 
     const s2Dates = timeseries.filter(ti => ti.sensor === 'Sentinel-2');
     const lsDates = timeseries.filter(ti => ti.sensor === 'Landsat 8/9');
-    buildWarnings(periodSummary, lastRequestedIndices, s2Dates.length, lsDates.length);
+    if (lastManualIndexSelection) {
+        buildWarnings(periodSummary, lastRequestedIndices, s2Dates.length, lsDates.length);
+    } else {
+        document.getElementById('warnings-panel').innerHTML = '';
+    }
 
     const cont = document.getElementById('dates-container');
     if (!cont || timeseries.length === 0) return;
@@ -317,7 +604,15 @@ function buildPopupChart() {
 // =========================================================================
 function showStatsSkeleton() {
     const panel = document.getElementById('summary-panel');
-    let html = '<div class="skeleton" style="height:14px;width:120px;margin-bottom:10px;"></div><div class="stats-grid">';
+    let html = '';
+    html += '<div class="field-condition-card">';
+    html += '  <div class="skeleton" style="height:14px;width:170px;margin-bottom:10px;"></div>';
+    html += '  <div class="skeleton" style="height:44px;width:90px;margin-bottom:10px;"></div>';
+    html += '  <div class="skeleton" style="height:10px;width:80%;margin-bottom:8px;"></div>';
+    html += '  <div class="skeleton" style="height:10px;width:75%;margin-bottom:12px;"></div>';
+    html += '  <div class="skeleton" style="height:34px;width:100%;border-radius:10px;"></div>';
+    html += '</div>';
+    html += '<div class="stats-grid">';
     for (let i = 0; i < 6; i++) {
         html += '<div class="stat-tile skeleton-tile">'
               + '<div class="skeleton" style="height:10px;width:40%;margin:0 auto 8px;"></div>'
@@ -353,12 +648,16 @@ async function startAnalysis() {
     const field_id = fieldInput.value.trim();
     const start    = document.getElementById('start_date').value;
     const end      = document.getElementById('end_date').value;
-    const indices  = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
+    const manualIndices = getManualSelectedIndices();
+    const analysisIndices = manualIndices.length > 0
+        ? Array.from(new Set(manualIndices.concat(FIELD_SCORE_CORE_INDICES)))
+        : getAnalysisIndices();
+    const displayIndices = manualIndices.length > 0 ? manualIndices.slice() : [];
 
     if (!start || !end) { showToast(t('toast_time_period'), 'warning'); return; }
     if (!currentAOI) { showToast(t('toast_select_aoi'), 'warning'); return; }
-    if (indices.length === 0) { showToast(t('toast_select_index'), 'warning'); return; }
 
+    clearPersistentStressLayer();
     clearAllOverlays();
 
     var resultCard = document.getElementById('result-card');
@@ -376,10 +675,11 @@ async function startAnalysis() {
     document.getElementById('btn-search').disabled = true;
     document.getElementById('btn-search-text').innerText = t('searching');
     document.getElementById('btn-search-spinner').style.display = 'inline-block';
+    collapseSetupCard();
 
     try {
         const currentQuery = {
-            field_id, start_date: start, end_date: end, indices,
+            field_id, start_date: start, end_date: end, indices: analysisIndices,
             geojson: currentAOI, cloud_cover: 20
         };
 
@@ -400,19 +700,24 @@ async function startAnalysis() {
 
         const data = await res.json();
         lastAnalysisData = data;
-        lastRequestedIndices = indices;
+        lastRequestedIndices = displayIndices;
+        lastManualIndexSelection = manualIndices.length > 0;
+        await refreshPersistentStressLayer(field_id, start, end);
 
         const cont = document.getElementById('dates-container');
         cont.innerHTML = '';
 
-        buildSummaryPanel(data.period_summary, indices);
+        buildSummaryPanel(data.period_summary, displayIndices, data.field_condition || null, lastManualIndexSelection);
+        prepareChartData(data.timeseries, displayIndices);
 
-        prepareChartData(data.timeseries, indices);
-
-        var allMissing = indices.every(function(i) { return data.period_summary[i] == null; });
+        var allMissing = analysisIndices.every(function(i) { return data.period_summary[i] == null; });
 
         if (data.timeseries.length === 0 || allMissing) {
-            buildWarnings(data.period_summary || {}, indices, 0, 0);
+            if (lastManualIndexSelection) {
+                buildWarnings(data.period_summary || {}, displayIndices, 0, 0);
+            } else {
+                document.getElementById('warnings-panel').innerHTML = '';
+            }
             document.getElementById('summary-panel').innerHTML = '';
             document.getElementById('dates-container').innerHTML = '';
             document.getElementById('btn-chart-toggle').style.display = 'none';
@@ -426,7 +731,11 @@ async function startAnalysis() {
             const s2Dates = data.timeseries.filter(t => t.sensor === 'Sentinel-2');
             const lsDates = data.timeseries.filter(t => t.sensor === 'Landsat 8/9');
 
-            buildWarnings(data.period_summary || {}, indices, s2Dates.length, lsDates.length);
+            if (lastManualIndexSelection) {
+                buildWarnings(data.period_summary || {}, displayIndices, s2Dates.length, lsDates.length);
+            } else {
+                document.getElementById('warnings-panel').innerHTML = '';
+            }
 
             let html = '';
             if (s2Dates.length > 0) {
@@ -456,7 +765,6 @@ async function startAnalysis() {
         }
         setProgress(100);
         setTimeout(() => setProgress(-1), 800);
-        setTimeout(collapseSetupCard, 600);
     } catch(e) {
         console.error(e);
         setStatus("Error: " + e.message, "error");
@@ -466,8 +774,15 @@ async function startAnalysis() {
     }
 
     document.getElementById('btn-search').disabled = false;
-    document.getElementById('btn-search-text').innerText = t('search_images');
+    updatePrimaryActionButtonLabel();
     document.getElementById('btn-search-spinner').style.display = 'none';
+}
+
+async function showStressHotspotsOnMap() {
+    const fieldId = (document.getElementById('field_id').value || 'field').trim() || 'field';
+    const start = document.getElementById('start_date').value;
+    const end = document.getElementById('end_date').value;
+    await refreshPersistentStressLayer(fieldId, start, end);
 }
 
 // =========================================================================
@@ -476,7 +791,10 @@ async function startAnalysis() {
 async function loadSelectedLayers() {
     const checkedItems = Array.from(document.querySelectorAll('.date-checkbox:checked'))
         .map(cb => ({ date: cb.value, sensor: cb.dataset.sensor }));
-    const allIndices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
+    const allIndices = (lastRequestedIndices && lastRequestedIndices.length > 0)
+        ? lastRequestedIndices.slice()
+        : getAnalysisIndices();
+    const automaticOnlyMode = !lastManualIndexSelection;
 
     if (checkedItems.length === 0) { showToast(t('toast_select_date'), 'warning'); return; }
     if (!currentAOI) { showToast(t('toast_no_aoi'), 'warning'); return; }
@@ -494,6 +812,9 @@ async function loadSelectedLayers() {
     document.getElementById('lp-opacity-val').innerText = '100%';
 
     const batchRequests = checkedItems.map(({ date, sensor }) => {
+        if (automaticOnlyMode) {
+            return { date, sensor, indices: ['RGB'] };
+        }
         const dateIndices = allIndices.filter(idx => {
             if (sensor === 'Sentinel-2') return S2_INDICES.has(idx);
             if (sensor === 'Landsat 8/9') return LS_INDICES.has(idx);
@@ -503,7 +824,7 @@ async function loadSelectedLayers() {
     });
 
     const totalDates = batchRequests.length;
-    let completedDates = 0, loaded = 0, failed = 0, firstLayerShown = false;
+    let completedDates = 0, loaded = 0, failed = 0;
 
     const promises = batchRequests.map(({ date, sensor, indices }) =>
         fetch(API_URL + '/visualize/batch', {
@@ -538,28 +859,26 @@ async function loadSelectedLayers() {
 
         for (const layer of data.layers) {
             const idx = layer.index_name;
-            const tileLayer = L.tileLayer(layer.layer_url, { opacity: 1.0, maxNativeZoom: 15, maxZoom: 22 });
+            const sensorNativeScale = sensor === 'Landsat 8/9' ? 30 : 10;
+            const nativeScale = Number(layer.native_scale || sensorNativeScale);
+            const tileLayer = L.tileLayer(layer.layer_url, {
+                opacity: 1.0,
+                maxNativeZoom: maxNativeZoomForScale(nativeScale),
+                maxZoom: 22,
+                zIndex: 1000,
+                pane: 'analysisPane'
+            });
             tileLayer._idxKey = idx;
             tileLayer._date = date;
             tileLayer._sensor = sensor;
             activeLayers.push(tileLayer);
-            addOverlayToPanel(tileLayer, idx, date, sensor);
+            const overlayCb = addOverlayToPanel(tileLayer, idx, date, sensor);
+            tileLayer._overlayCb = overlayCb || null;
 
-            if (idx !== 'RGB' && !Array.from(document.querySelectorAll('.leg-tab')).some(t => t.dataset.idx === idx)) {
-                const btn = document.createElement('div');
-                btn.className = 'leg-tab'; btn.dataset.idx = idx;
-                btn.innerText = INDEX_INFO[idx] ? INDEX_INFO[idx].short : idx;
-                btn.onclick = () => updateLegend(idx);
-                document.getElementById('legend-tabs').appendChild(btn);
-            }
+            ensureLegendTab(idx);
 
-            if (!firstLayerShown && idx !== 'RGB') {
-                tileLayer.addTo(map);
-                updateLegend(idx);
-                const cbs = document.querySelectorAll('.lp-overlay-cb');
-                if (cbs.length > 0) cbs[cbs.length - 1].checked = true;
-                firstLayerShown = true;
-            }
+            // Do not auto-show any loaded index/RGB layer.
+            // Layers are added unchecked in the panel and user controls visibility.
             loaded++;
         }
         setStatus(t('status_loading_overlays', { done: completedDates, total: totalDates, elapsed: elapsed }), "loading");
@@ -774,15 +1093,15 @@ function updateSearchBtn() {
     var btn = document.getElementById('btn-search');
     var start = document.getElementById('start_date').value;
     var end = document.getElementById('end_date').value;
-    var indices = document.querySelectorAll('input[name="idx"]:checked');
     var hasAOI = !!currentAOI;
 
     var datesOk = start && end && end >= start;
     var today = new Date().toISOString().split('T')[0];
     if (start > today || end > today) datesOk = false;
 
-    var ready = datesOk && indices.length > 0 && hasAOI;
+    var ready = datesOk && hasAOI;
     btn.disabled = !ready;
+    updatePrimaryActionButtonLabel();
 }
 
 document.querySelectorAll('input[name="idx"]').forEach(function(cb) {
@@ -795,6 +1114,7 @@ document.getElementById('end_date').addEventListener('change', updateSearchBtn);
 var origSetAOI = setAOI;
 setAOI = function(geojson, info) {
     origSetAOI(geojson, info);
+    clearPersistentStressLayer();
     updateSearchBtn();
 };
 

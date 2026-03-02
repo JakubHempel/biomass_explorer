@@ -108,7 +108,7 @@
 
             <div id="setup-body">
             <!-- SECTION: Field Identity -->
-            <div class="setup-section">
+            <div class="setup-section section-field-time">
                 <div class="setup-section-title">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                     Field &amp; Time
@@ -130,46 +130,52 @@
             </div>
 
             <!-- SECTION: Indices Selection -->
-            <div class="setup-section">
+            <div class="setup-section section-field-health">
                 <div class="setup-section-title">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 17 4-8 4 4 5-6"/></svg>
-                    Indices
+                    Field Health Check
+                </div>
+                <div class="auto-indices-note" id="auto-indices-note">
+                    We automatically choose the best indicators and calculate one clear Field Condition Score. No technical setup needed.
                 </div>
 
-                <!-- Vegetation & Growth (Sentinel-2) -->
-                <div class="idx-group-header">
-                    <label>Vegetation &amp; Growth <span class="idx-sensor-tag">Sentinel-2</span></label>
-                    <a href="#" class="select-all-link" onclick="toggleGroupIndices('s2', this); return false;">select all</a>
-                </div>
-                <div class="indices-grid" id="s2-indices">
-                    <label class="cb-item" title="Vegetation greenness & overall crop health"><input type="checkbox" name="idx" value="NDVI" data-group="s2"><span>NDVI</span></label>
-                    <label class="cb-item" title="Red-edge vegetation status"><input type="checkbox" name="idx" value="NDRE" data-group="s2"><span>NDRE</span></label>
-                    <label class="cb-item" title="Green vegetation / chlorophyll"><input type="checkbox" name="idx" value="GNDVI" data-group="s2"><span>GNDVI</span></label>
-                    <label class="cb-item" title="Enhanced vegetation (atmosphere corrected)"><input type="checkbox" name="idx" value="EVI" data-group="s2"><span>EVI</span></label>
-                    <label class="cb-item" title="Vegetation adjusted for soil brightness"><input type="checkbox" name="idx" value="SAVI" data-group="s2"><span>SAVI</span></label>
-                    <label class="cb-item" title="Chlorophyll content via red-edge"><input type="checkbox" name="idx" value="CIre" data-group="s2"><span>CI-re</span></label>
-                    <label class="cb-item" title="Chlorophyll content (MERIS method)"><input type="checkbox" name="idx" value="MTCI" data-group="s2"><span>MTCI</span></label>
-                    <label class="cb-item" title="Red-edge chlorophyll (4-band)"><input type="checkbox" name="idx" value="IRECI" data-group="s2"><span>IRECI</span></label>
-                    <label class="cb-item" title="Leaf water / moisture content"><input type="checkbox" name="idx" value="NDMI" data-group="s2"><span>NDMI</span></label>
-                    <label class="cb-item" title="Drought monitoring using dual SWIR"><input type="checkbox" name="idx" value="NMDI" data-group="s2"><span>NMDI</span></label>
-                </div>
+                <details class="advanced-indices" id="advanced-indices">
+                    <summary id="advanced-indices-summary">Expert mode: choose indicators manually (optional)</summary>
+                    <!-- Vegetation & Growth (Sentinel-2) -->
+                    <div class="idx-group-header">
+                        <label>Vegetation &amp; Growth <span class="idx-sensor-tag">Sentinel-2</span></label>
+                        <a href="#" class="select-all-link" onclick="toggleGroupIndices('s2', this); return false;">select all</a>
+                    </div>
+                    <div class="indices-grid" id="s2-indices">
+                        <label class="cb-item" title="Vegetation greenness & overall crop health"><input type="checkbox" name="idx" value="NDVI" data-group="s2"><span>NDVI</span></label>
+                        <label class="cb-item" title="Red-edge vegetation status"><input type="checkbox" name="idx" value="NDRE" data-group="s2"><span>NDRE</span></label>
+                        <label class="cb-item" title="Green vegetation / chlorophyll"><input type="checkbox" name="idx" value="GNDVI" data-group="s2"><span>GNDVI</span></label>
+                        <label class="cb-item" title="Enhanced vegetation (atmosphere corrected)"><input type="checkbox" name="idx" value="EVI" data-group="s2"><span>EVI</span></label>
+                        <label class="cb-item" title="Vegetation adjusted for soil brightness"><input type="checkbox" name="idx" value="SAVI" data-group="s2"><span>SAVI</span></label>
+                        <label class="cb-item" title="Chlorophyll content via red-edge"><input type="checkbox" name="idx" value="CIre" data-group="s2"><span>CI-re</span></label>
+                        <label class="cb-item" title="Chlorophyll content (MERIS method)"><input type="checkbox" name="idx" value="MTCI" data-group="s2"><span>MTCI</span></label>
+                        <label class="cb-item" title="Red-edge chlorophyll (4-band)"><input type="checkbox" name="idx" value="IRECI" data-group="s2"><span>IRECI</span></label>
+                        <label class="cb-item" title="Leaf water / moisture content"><input type="checkbox" name="idx" value="NDMI" data-group="s2"><span>NDMI</span></label>
+                        <label class="cb-item" title="Drought monitoring using dual SWIR"><input type="checkbox" name="idx" value="NMDI" data-group="s2"><span>NMDI</span></label>
+                    </div>
 
-                <!-- Temperature & Drought (Landsat) -->
-                <div class="idx-group-header">
-                    <label>Temperature &amp; Drought <span class="idx-sensor-tag ls">Landsat 8/9</span></label>
-                    <a href="#" class="select-all-link" onclick="toggleGroupIndices('ls', this); return false;">select all</a>
-                </div>
-                <div class="indices-grid" id="ls-indices">
-                    <label class="cb-item" title="Surface temperature from thermal infrared"><input type="checkbox" name="idx" value="LST" data-group="ls"><span>LST</span></label>
-                    <label class="cb-item" title="Vegetation water supply proxy"><input type="checkbox" name="idx" value="VSWI" data-group="ls"><span>VSWI</span></label>
-                    <label class="cb-item" title="Temperature-based soil/vegetation dryness"><input type="checkbox" name="idx" value="TVDI" data-group="ls"><span>TVDI</span></label>
-                    <label class="cb-item" title="Temperature stress condition"><input type="checkbox" name="idx" value="TCI" data-group="ls"><span>TCI</span></label>
-                    <label class="cb-item" title="Composite vegetation health score"><input type="checkbox" name="idx" value="VHI" data-group="ls"><span>VHI</span></label>
-                </div>
+                    <!-- Temperature & Drought (Landsat) -->
+                    <div class="idx-group-header">
+                        <label>Temperature &amp; Drought <span class="idx-sensor-tag ls">Landsat 8/9</span></label>
+                        <a href="#" class="select-all-link" onclick="toggleGroupIndices('ls', this); return false;">select all</a>
+                    </div>
+                    <div class="indices-grid" id="ls-indices">
+                        <label class="cb-item" title="Surface temperature from thermal infrared"><input type="checkbox" name="idx" value="LST" data-group="ls"><span>LST</span></label>
+                        <label class="cb-item" title="Vegetation water supply proxy"><input type="checkbox" name="idx" value="VSWI" data-group="ls"><span>VSWI</span></label>
+                        <label class="cb-item" title="Temperature-based soil/vegetation dryness"><input type="checkbox" name="idx" value="TVDI" data-group="ls"><span>TVDI</span></label>
+                        <label class="cb-item" title="Temperature stress condition"><input type="checkbox" name="idx" value="TCI" data-group="ls"><span>TCI</span></label>
+                        <label class="cb-item" title="Composite vegetation health score"><input type="checkbox" name="idx" value="VHI" data-group="ls"><span>VHI</span></label>
+                    </div>
+                </details>
             </div>
 
             <!-- SECTION: Area of Interest -->
-            <div class="setup-section">
+            <div class="setup-section section-aoi">
                 <div class="setup-section-title">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1,6 4,22 22,18 18,2"/></svg>
                     Area of Interest
@@ -375,6 +381,7 @@
             <p id="leg-desc" style="font-size:0.78rem; color:#94a3b8; margin-bottom:15px; line-height:1.55;"></p>
             <div id="leg-gradient" class="legend-gradient"></div>
             <div class="leg-labels"><span id="leg-min">Min</span><span id="leg-max">Max</span></div>
+            <div id="leg-steps" class="leg-steps" style="display:none;"></div>
         </div>
     </div>
 </div>

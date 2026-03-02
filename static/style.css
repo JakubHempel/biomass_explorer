@@ -122,14 +122,14 @@ body.dark-mode .sidebar-toggle:hover { background: #334155; color: #60a5fa; }
 }
 .app-header-inner { display: flex; align-items: center; gap: 12px; }
 .app-logo {
-    width: 56px;
-    height: 34px;
+    width: 68px;
+    height: 42px;
     object-fit: contain;
-    border-radius: 8px;
+    border-radius: 10px;
     background: #ffffff;
-    border: 1px solid rgba(255,255,255,0.5);
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
-    padding: 4px 6px;
+    border: 1px solid rgba(255,255,255,0.72);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.28);
+    padding: 2px 4px;
     flex-shrink: 0;
 }
 .app-icon {

@@ -103,6 +103,8 @@ async def pixel_value(request: schemas.PixelQueryRequest):
             indices=request.indices,
             geojson=request.geojson,
             cloud_cover=request.cloud_cover,
+            start_date=request.start_date,
+            end_date=request.end_date,
         )
         return result
     except Exception as e:
