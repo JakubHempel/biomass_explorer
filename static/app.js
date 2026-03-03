@@ -649,8 +649,10 @@ async function startAnalysis() {
     const start    = document.getElementById('start_date').value;
     const end      = document.getElementById('end_date').value;
     const manualIndices = getManualSelectedIndices();
+    // In expert/manual mode, process strictly the user-selected indices only.
+    // Do not auto-inject field-score core indices into persistence/layers flow.
     const analysisIndices = manualIndices.length > 0
-        ? Array.from(new Set(manualIndices.concat(FIELD_SCORE_CORE_INDICES)))
+        ? manualIndices.slice()
         : getAnalysisIndices();
     const displayIndices = manualIndices.length > 0 ? manualIndices.slice() : [];
 
