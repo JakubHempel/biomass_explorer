@@ -2,7 +2,7 @@
    DATES CONTAINER  +  SENSOR GROUPS
    ========================================================================== */
 #dates-container {
-    max-height: 250px; overflow-y: auto;
+    max-height: 320px; overflow-y: auto;
     border: 1px solid var(--border);
     background: var(--bg-subtle);
     border-radius: var(--radius);

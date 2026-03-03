@@ -94,6 +94,31 @@ body.dark-mode .aoi-method:hover { background: #1e293b; border-color: #60a5fa; c
 body.dark-mode .aoi-method:hover svg { color: #60a5fa; }
 body.dark-mode .aoi-method.active { background: rgba(96,165,250,0.08); border-color: #60a5fa; color: #60a5fa; }
 body.dark-mode .aoi-method.active svg { color: #60a5fa; }
+body.dark-mode #field_id,
+body.dark-mode #parcel_query {
+    background: #0f172a;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+body.dark-mode .parcel-hint,
+body.dark-mode .mapclick-desc {
+    color: #94a3b8;
+}
+body.dark-mode .auto-indices-note {
+    background: linear-gradient(180deg, #0f172a, #111b2e);
+    border-color: #334155;
+    border-left-color: #3b82f6;
+    color: #cbd5e1;
+}
+body.dark-mode .advanced-indices summary {
+    color: #94a3b8;
+}
+body.dark-mode .btn-parcel-search {
+    box-shadow: 0 2px 10px rgba(124,58,237,0.35);
+}
+body.dark-mode .btn-parcel-search:hover:not(:disabled) {
+    box-shadow: 0 4px 16px rgba(124,58,237,0.45);
+}
 
 body.dark-mode .saved-fields-dropdown { background: var(--surface); border-color: var(--border); }
 body.dark-mode .saved-field-item:hover { background: #0f172a; }
@@ -143,6 +168,74 @@ body.dark-mode .btn-outline:hover {
 
 body.dark-mode .stat-tile { background: #0f172a; border-color: #334155; }
 body.dark-mode .stat-na { color: #475569 !important; }
+
+/* Field condition card in dark mode */
+body.dark-mode .field-condition-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+    border-color: #334155;
+}
+body.dark-mode .field-condition-title {
+    color: #cbd5e1;
+}
+body.dark-mode .field-condition-label {
+    color: #bfdbfe;
+    background: rgba(30, 64, 175, 0.25);
+    border-color: rgba(96, 165, 250, 0.45);
+}
+body.dark-mode .field-condition-score {
+    color: #f8fafc;
+}
+body.dark-mode .field-condition-scale {
+    color: #94a3b8;
+}
+body.dark-mode .field-condition-meta {
+    color: #cbd5e1;
+}
+body.dark-mode .field-condition-drivers-title {
+    color: #93c5fd;
+}
+body.dark-mode .fc-drivers {
+    color: #cbd5e1;
+}
+body.dark-mode .fc-empty {
+    color: #94a3b8;
+}
+body.dark-mode .field-condition-summary {
+    background: rgba(15, 23, 42, 0.7);
+    border-color: #334155;
+    color: #cbd5e1;
+}
+body.dark-mode .field-condition-conf-note {
+    color: #94a3b8;
+}
+body.dark-mode .field-condition-hotspot-btn {
+    background: #0f172a;
+    border-color: #334155;
+    color: #93c5fd;
+}
+body.dark-mode .field-condition-hotspot-btn:hover {
+    background: #1e293b;
+    border-color: #475569;
+}
+body.dark-mode .field-score-hover-legend {
+    background: rgba(2, 6, 23, 0.98);
+    border: 1px solid #334155;
+    color: #cbd5e1;
+}
+body.dark-mode .field-score-hover-legend::before {
+    border-color: transparent transparent rgba(2, 6, 23, 0.98) transparent;
+}
+
+/* Keep browser autofill from forcing light inputs in dark mode */
+body.dark-mode input:-webkit-autofill,
+body.dark-mode input:-webkit-autofill:hover,
+body.dark-mode input:-webkit-autofill:focus,
+body.dark-mode textarea:-webkit-autofill,
+body.dark-mode select:-webkit-autofill {
+    -webkit-text-fill-color: #e2e8f0;
+    -webkit-box-shadow: 0 0 0px 1000px #0f172a inset;
+    transition: background-color 9999s ease-in-out 0s;
+}
 
 body.dark-mode label { color: #94a3b8; }
 body.dark-mode kbd { background: #0f172a; border-color: #334155; color: #e2e8f0; box-shadow: 0 1px 0 #334155; }
@@ -242,6 +335,34 @@ body.dark-mode .leaflet-control-geocoder-alternatives {
 }
 body.dark-mode .leaflet-control-geocoder-alternatives li:hover {
     background: #334155 !important;
+}
+
+/* Pixel inspector popup */
+body.dark-mode .pixel-popup .leaflet-popup-content-wrapper {
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+body.dark-mode .pixel-popup .leaflet-popup-tip {
+    background: #0f172a;
+    border: 1px solid #334155;
+}
+body.dark-mode .pixel-popup .leaflet-popup-content {
+    color: #e2e8f0;
+}
+body.dark-mode .pixel-popup .leaflet-popup-content * {
+    color: #cbd5e1 !important;
+    border-color: #334155 !important;
+}
+body.dark-mode .pixel-popup .leaflet-popup-content b {
+    color: #f8fafc !important;
+}
+body.dark-mode .pixel-popup .leaflet-popup-close-button {
+    color: #94a3b8 !important;
+}
+body.dark-mode .pixel-popup .leaflet-popup-close-button:hover {
+    color: #e2e8f0 !important;
 }
 
 /* ==========================================================================
