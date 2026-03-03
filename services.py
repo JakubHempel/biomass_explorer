@@ -430,7 +430,6 @@ def _normalize_lower(value: Optional[float], low: float, high: float) -> Optiona
 
 
 def _compute_field_condition_fast(
-    requested_indices: list,
     period_summary: Dict[str, Optional[float]],
     period_stats: Dict[str, dict],
     timeseries_count: int,
@@ -458,8 +457,6 @@ def _compute_field_condition_fast(
     variability_terms = []
 
     for idx, cfg in components.items():
-        if idx not in requested_indices:
-            continue
         s = cfg["score"]
         if s is None:
             continue
@@ -525,6 +522,33 @@ def _compute_field_condition_fast(
         "drivers": top_drivers,
         "index_breakdown": index_breakdown,
     }
+
+
+def _compute_hotspot_mean_stress(region, start_date: str, end_date: str, cloud_cover: int) -> Optional[float]:
+    """Compute AOI mean stress (0..1) from the same hotspot layer shown on map."""
+    try:
+        s_date = ee.Date(start_date)
+        e_date = ee.Date(end_date)
+        if start_date == end_date:
+            e_date = s_date.advance(1, 'day')
+
+        stress_img, native_scale = _build_stress_hotspot_image(
+            region, s_date, e_date, cloud_cover, include_landsat=True
+        )
+        stats = stress_img.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=region,
+            scale=native_scale,
+            maxPixels=1e9,
+            bestEffort=True,
+        ).getInfo() or {}
+        mean_stress = _safe_float(stats.get("STRESS_HOTSPOTS"))
+        if mean_stress is None:
+            return None
+        return _clamp(mean_stress, 0.0, 1.0)
+    except Exception as exc:
+        log.warning("Hotspot mean stress fallback failed: %s", exc)
+        return None
 
 
 def _single_point_stats(value: Optional[float]) -> dict:
@@ -777,14 +801,72 @@ def calculate_biomass_logic(request: AnalysisRequest) -> dict:
     if requested_landsat:
         sensors.append("Landsat 8/9 C2L2")
 
+    # Compute field-condition from internal core indices only (not persisted/layered
+    # unless explicitly selected by user). This keeps expert-mode outputs clean.
+    core_s2_col = s2_col
+    core_ls_col = ls_col
+    if core_s2_col is None:
+        core_s2_col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+                       .filterBounds(region)
+                       .filterDate(request.start_date, request.end_date)
+                       .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', request.cloud_cover))
+                       .map(_mask_s2_clouds))
+    if core_ls_col is None:
+        l8_core = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+        l9_core = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+        core_ls_col = (l8_core.merge(l9_core)
+                       .filterBounds(region)
+                       .filterDate(request.start_date, request.end_date)
+                       .filter(ee.Filter.lt('CLOUD_COVER', request.cloud_cover))
+                       .map(_mask_landsat_clouds).map(_apply_landsat_scale))
+
+    core_summary, core_period_stats = _compute_core_summary_from_period_composites(
+        region=region,
+        request_indices=list(_FIELD_SCORE_CORE_INDICES),
+        requested_s2=["NDVI", "NDMI"],
+        requested_landsat=["TVDI", "TCI", "VHI"],
+        s2_col=core_s2_col,
+        ls_col=core_ls_col,
+    )
+
     elapsed = time.time() - t0
     log.info("Analysis complete: %d dates, %.1fs total", len(timeseries_results), elapsed)
     field_condition = _compute_field_condition_fast(
-        requested_indices=request.indices,
-        period_summary=summary_stats,
-        period_stats=period_stats,
+        period_summary=core_summary,
+        period_stats=core_period_stats,
         timeseries_count=len(timeseries_results),
     )
+
+    # Keep field score consistent with hotspot map colors:
+    # score_0_10 = 10 * (1 - mean_stress), where mean_stress is from STRESS_HOTSPOTS.
+    hotspot_mean_stress = _compute_hotspot_mean_stress(
+        region=region,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        cloud_cover=request.cloud_cover,
+    )
+    if hotspot_mean_stress is not None:
+        hotspot_score = _clamp((1.0 - hotspot_mean_stress) * 10.0, 0.0, 10.0)
+        if field_condition is None:
+            field_condition = {
+                "score_0_10": round(hotspot_score, 2),
+                "label": _score_label(hotspot_score),
+                "confidence": "Medium",
+                "confidence_score": 0.5,
+                "base_score_0_10": round(hotspot_score, 2),
+                "damage_penalty": 0.0,
+                "variability_penalty": 0.0,
+                "damaged_area_pct": round(hotspot_mean_stress * 100.0, 2),
+                "drivers": [],
+                "index_breakdown": {},
+            }
+        else:
+            field_condition["score_0_10"] = round(hotspot_score, 2)
+            field_condition["label"] = _score_label(hotspot_score)
+            field_condition["base_score_0_10"] = round(hotspot_score, 2)
+            field_condition["damage_penalty"] = 0.0
+            field_condition["variability_penalty"] = 0.0
+            field_condition["damaged_area_pct"] = round(hotspot_mean_stress * 100.0, 2)
 
     return {
         "metadata": {
@@ -804,44 +886,67 @@ def calculate_biomass_logic(request: AnalysisRequest) -> dict:
 #  Database persistence
 # ===========================================================================
 def save_results_to_db(db: Session, result_data: dict):
-    field_id = result_data["metadata"]["field_id"]
+    try:
+        field_id = int(result_data["metadata"]["field_id"])
+    except (TypeError, ValueError):
+        raise ValueError("field_id must be a numeric value for the target database table.")
     updated_count = 0
     new_count = 0
+    processed_count = 0
+    skipped_empty_count = 0
 
     for item in result_data["timeseries"]:
+        processed_count += 1
         measurement_date = date_type.fromisoformat(item["date"])
         sensor = item.get("sensor", "")
         values = item["values"]
         if not values:
+            skipped_empty_count += 1
             continue
 
         existing = db.query(models.Measurement).filter(
             models.Measurement.field_id == field_id,
-            models.Measurement.date == measurement_date,
+            models.Measurement.captured_at == measurement_date,
             models.Measurement.sensor == sensor
         ).first()
 
         if existing:
             modified = False
+            if getattr(existing, "captured_at", None) != measurement_date:
+                setattr(existing, "captured_at", measurement_date)
+                modified = True
             for idx_name, val in values.items():
                 column_name = idx_name.lower()
                 if getattr(existing, column_name, None) != val:
                     setattr(existing, column_name, val)
                     modified = True
+            if getattr(existing, "canopy_cover", None) is None:
+                existing.canopy_cover = 1.0
+                modified = True
+            if getattr(existing, "biomass_est", None) is None:
+                existing.biomass_est = 1.0
+                modified = True
+            if getattr(existing, "source_image_id", None) in (None, ""):
+                existing.source_image_id = "1"
+                modified = True
             if modified:
                 updated_count += 1
             continue
 
         db_record = models.Measurement(
             field_id=field_id,
-            date=measurement_date,
+            captured_at=measurement_date,
             sensor=sensor,
+            source="GEE",
+            source_image_id=item.get("source_image_id") or "1",
             # Sentinel-2
             ndvi=values.get("NDVI"),
             ndre=values.get("NDRE"),
             gndvi=values.get("GNDVI"),
             evi=values.get("EVI"),
             savi=values.get("SAVI"),
+            canopy_cover=values.get("CANOPY_COVER", 1.0),
+            biomass_est=values.get("BIOMASS_EST", 1.0),
             cire=values.get("CIre"),
             mtci=values.get("MTCI"),
             ireci=values.get("IRECI"),
@@ -858,7 +963,12 @@ def save_results_to_db(db: Session, result_data: dict):
         new_count += 1
 
     db.commit()
-    print(f"DB: {new_count} new rows, {updated_count} updated rows.")
+    table_name = models.Measurement.__table__.fullname
+    print(
+        f"DB status | table={table_name} | field_id={field_id} "
+        f"| processed={processed_count} | skipped_empty={skipped_empty_count} "
+        f"| new={new_count} | updated={updated_count}"
+    )
 
 
 # ===========================================================================
@@ -986,29 +1096,8 @@ def generate_tile_url(request: AnalysisRequest, index_name: str) -> dict:
         stress, native_scale = _build_stress_hotspot_image(
             region, s_date, e_date, request.cloud_cover, include_landsat=True
         )
-        # Adaptive stretch improves visibility when stress values are tightly packed.
-        p = stress.reduceRegion(
-            reducer=ee.Reducer.percentile([2, 98]),
-            geometry=region,
-            scale=native_scale,
-            maxPixels=1e9,
-            bestEffort=True
-        ).getInfo() or {}
-        p2 = _safe_float(p.get('STRESS_HOTSPOTS_p2'))
-        p98 = _safe_float(p.get('STRESS_HOTSPOTS_p98'))
-        if p2 is None or p98 is None:
-            vis_min, vis_max = 0.0, 0.35
-        else:
-            spread = max(0.0, p98 - p2)
-            if spread < 0.05:
-                # Low-variability fields: emphasize subtle hotspots.
-                vis_min, vis_max = 0.0, 0.35
-            else:
-                vis_min = _clamp(p2, 0.0, 0.9)
-                vis_max = _clamp(p98, 0.1, 1.0)
-                if vis_max - vis_min < 0.08:
-                    vis_max = _clamp(vis_min + 0.08, 0.1, 1.0)
-        vis_params = {'min': vis_min, 'max': vis_max, 'palette': hotspot_palette}
+        # Fixed scaling: align color interpretation with pixel-popup thresholds.
+        vis_params = {'min': 0.0, 'max': 1.0, 'palette': hotspot_palette}
         return _get_map_id(stress, vis_params, index_name, native_scale=native_scale)
 
     # ---------------------------------------------------------------
