@@ -121,6 +121,9 @@ body.dark-mode .btn-parcel-search:hover:not(:disabled) {
 }
 
 body.dark-mode .saved-fields-dropdown { background: var(--surface); border-color: var(--border); }
+body.dark-mode .sfd-section-label { background: #0f172a; color: #64748b; border-color: var(--border); }
+body.dark-mode .sfd-sub { color: #64748b; }
+body.dark-mode .saved-field-item:hover { background: #1e293b; }
 body.dark-mode .saved-field-item:hover { background: #0f172a; }
 body.dark-mode .btn-saved-fields { background: #0f172a; border-color: #334155 !important; }
 

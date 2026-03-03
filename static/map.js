@@ -539,22 +539,100 @@ function removeSavedField(index) {
 }
 function toggleSavedFields() {
     const dd = document.getElementById('saved-fields-dropdown');
-    if (dd.style.display === 'none') { renderSavedFields(); dd.style.display = 'block'; }
-    else { dd.style.display = 'none'; }
+    if (dd.style.display === 'none') {
+        dd.style.display = 'block';
+        renderSavedFields();
+    } else {
+        dd.style.display = 'none';
+    }
 }
-function renderSavedFields() {
+
+async function renderSavedFields() {
     const dd = document.getElementById('saved-fields-dropdown');
-    const fields = getSavedFields();
-    if (fields.length === 0) { dd.innerHTML = '<div class="saved-empty">' + (currentLang() === 'pl' ? 'Brak zapisanych pól' : 'No saved fields yet') + '</div>'; return; }
-    dd.innerHTML = fields.map((f, i) => {
-        const date = new Date(f.savedAt).toLocaleDateString(currentLang() === 'pl' ? 'pl-PL' : 'en-GB', { day: 'numeric', month: 'short' });
-        return '<div class="saved-field-item" onclick="loadSavedField(' + i + ')">'
-             + '  <div><span class="saved-field-name">' + f.name + '</span>'
-             + '  <span class="saved-field-date">' + date + '</span></div>'
-             + '  <button type="button" class="saved-field-remove" onclick="event.stopPropagation(); removeSavedField(' + i + ')" title="' + (currentLang() === 'pl' ? 'Usuń' : 'Remove') + '">&times;</button>'
-             + '</div>';
-    }).join('');
+    const pl = currentLang() === 'pl';
+    dd.innerHTML = '<div class="saved-empty">' + (pl ? 'Ładowanie…' : 'Loading…') + '</div>';
+
+    const token = localStorage.getItem('bm_token');
+    let dbFields = [];
+
+    if (token) {
+        try {
+            const res = await fetch('/api/fields/browse', {
+                headers: { Authorization: 'Bearer ' + token }
+            });
+            if (res.ok) dbFields = await res.json();
+        } catch (_) {}
+    }
+
+    const localFields = getSavedFields();
+    let html = '';
+
+    // ── DB fields section ──────────────────────────────────────────────────
+    if (dbFields.length) {
+        const role = localStorage.getItem('bm_role') || 'user';
+        const sectionLabel = role === 'admin'
+            ? (pl ? 'Wszystkie pola (baza)' : 'All fields (database)')
+            : (pl ? 'Twoje pola (baza)' : 'Your fields (database)');
+        html += '<div class="sfd-section-label">' + sectionLabel + '</div>';
+        html += dbFields.map((f, i) => {
+            const area = f.area_ha ? f.area_ha.toFixed(2) + ' ha' : '';
+            const sub  = [f.owner_name, f.crop].filter(Boolean).join(' · ');
+            return '<div class="saved-field-item sfd-db-item" onclick="loadDbField(' + f.id + ',\'' + escSq(f.name) + '\')">'
+                 + '  <div style="min-width:0">'
+                 + '    <span class="saved-field-name">' + escHtmlSf(f.name) + '</span>'
+                 + (sub ? '    <span class="sfd-sub">' + escHtmlSf(sub) + '</span>' : '')
+                 + '  </div>'
+                 + (area ? '<span class="sfd-area">' + area + '</span>' : '')
+                 + '</div>';
+        }).join('');
+    }
+
+    // ── Recent/local fields section ────────────────────────────────────────
+    if (localFields.length) {
+        html += '<div class="sfd-section-label">' + (pl ? 'Ostatnio używane' : 'Recently used') + '</div>';
+        html += localFields.map((f, i) => {
+            const date = new Date(f.savedAt).toLocaleDateString(pl ? 'pl-PL' : 'en-GB', { day: 'numeric', month: 'short' });
+            return '<div class="saved-field-item" onclick="loadSavedField(' + i + ')">'
+                 + '  <div><span class="saved-field-name">' + escHtmlSf(f.name) + '</span>'
+                 + '  <span class="saved-field-date">' + date + '</span></div>'
+                 + '  <button type="button" class="saved-field-remove" onclick="event.stopPropagation(); removeSavedField(' + i + ')" title="' + (pl ? 'Usuń' : 'Remove') + '">&times;</button>'
+                 + '</div>';
+        }).join('');
+    }
+
+    if (!html) {
+        html = '<div class="saved-empty">' + (pl ? 'Brak pól' : 'No fields yet') + '</div>';
+    }
+    dd.innerHTML = html;
 }
+
+function escHtmlSf(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escSq(s) { return String(s || '').replace(/'/g, "\\'"); }
+
+async function loadDbField(id, name) {
+    document.getElementById('field_id').value = name;
+    document.getElementById('saved-fields-dropdown').style.display = 'none';
+
+    try {
+        const token = localStorage.getItem('bm_token');
+        const res = await fetch('/api/fields/' + id, {
+            headers: { Authorization: 'Bearer ' + token }
+        });
+        if (res.ok) {
+            const d = await res.json();
+            if (d.geojson) {
+                setAOI(d.geojson, null);
+                const statusEl = document.getElementById('aoi-status');
+                lastAoiStatusData = { type: 'saved', name: name, info: null };
+                statusEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
+                statusEl.style.display = 'flex';
+            }
+        }
+    } catch (_) {}
+}
+
 function loadSavedField(index) {
     const fields = getSavedFields();
     const f = fields[index];
@@ -563,7 +641,6 @@ function loadSavedField(index) {
     setAOI(f.geojson, f.info);
     document.getElementById('saved-fields-dropdown').style.display = 'none';
 
-    // Show saved-field confirmation banner
     const statusEl = document.getElementById('aoi-status');
     lastAoiStatusData = { type: 'saved', name: f.name, info: f.info || null };
     statusEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);

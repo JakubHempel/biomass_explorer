@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="/static/admin-shared.css">
+<script>if(localStorage.getItem('biomass_dark_mode')==='1')document.body.classList.add('dark-mode');</script>
 <script src="/static/i18n.js"></script>
 <style>
 :root{
@@ -20,30 +22,12 @@
   --radius:10px;--radius-lg:14px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.08);
   --shadow-md:0 4px 16px rgba(0,0,0,.10);
-  --topbar:52px;--panel:380px;
+  --topbar:var(--topbar-h);--panel:380px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',sans-serif;font-size:14px;color:var(--text);background:var(--bg);height:100vh;overflow:hidden}
 
-/* ── Topbar ── */
-.topbar{height:var(--topbar);background:var(--surface);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;padding:0 18px;gap:12px;z-index:300;position:relative}
-.tb-back{display:flex;align-items:center;gap:5px;color:var(--text-muted);text-decoration:none;
-  font-size:13px;font-weight:500;padding:5px 8px;border-radius:6px;transition:background .15s}
-.tb-back:hover{background:var(--bg);color:var(--text)}
-.tb-title{font-size:15px;font-weight:700;color:var(--text)}
-.tb-sep{color:var(--border-input)}
-.tb-spacer{flex:1}
-.tb-user{font-size:13px;color:var(--text-muted);font-weight:500}
-.tb-role{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--primary-light);color:var(--primary)}
-.tb-logout{padding:5px 12px;border-radius:7px;border:1px solid var(--border-input);
-  background:none;color:var(--text-muted);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s}
-.tb-logout:hover{background:var(--danger-light);border-color:var(--danger);color:var(--danger)}
-/* lang switcher */
-.lang-switch{display:flex;gap:3px;align-items:center}
-.lang-btn{padding:3px 5px;border-radius:6px;border:1.5px solid transparent;cursor:pointer;font-size:15px;background:none;line-height:1;transition:all .12s;opacity:.55}
-.lang-btn:hover{opacity:1;background:var(--bg)}
-.lang-btn.active{opacity:1;border-color:var(--primary);background:var(--primary-light)}
+/* ── Topbar handled by admin-shared.css ── */
 
 /* ── Layout ── */
 .layout{display:flex;height:calc(100vh - var(--topbar));overflow:hidden}
@@ -161,25 +145,33 @@ select.filter-sel:focus{border-color:var(--primary)}
 </head>
 <body>
 
-<!-- Topbar -->
-<header class="topbar">
-  <a class="tb-back" href="/admin">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-    <span data-i18n="back">Admin</span>
-  </a>
-  <span class="tb-sep">|</span>
-  <span class="tb-title">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
-    <span data-i18n="fields_tb_title">Pola uprawne</span>
-  </span>
-  <div class="tb-spacer"></div>
-  <div class="lang-switch">
-    <button class="lang-btn" data-lang="pl" onclick="applyLang('pl')" data-i18n-title="lang_pl_title" title="Zmień na polski">🇵🇱</button>
-    <button class="lang-btn" data-lang="en" onclick="applyLang('en')" data-i18n-title="lang_en_title" title="Switch to English">🇬🇧</button>
+<!-- App Header -->
+<header class="app-header">
+  <div class="app-header-inner">
+    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
+      <img src="/static/radscan_logo_color.jpg" class="app-logo" alt="Radscan">
+    </a>
+    <div>
+      <div class="app-title">Biomass Explorer</div>
+      <span class="app-subtitle" data-i18n="fields_tb_title">Pola uprawne</span>
+    </div>
+    <div class="app-header-sep"></div>
+    <div class="app-header-nav">
+      <a class="app-header-back" href="/admin">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <span data-i18n="back">Admin</span>
+      </a>
+    </div>
+    <div class="app-header-spacer"></div>
+    <span class="app-user-badge" id="tb-user">–</span>
+    <span class="app-role-badge" id="tb-role" style="display:none"></span>
+    <div class="app-lang-switch">
+      <button class="app-lang-btn" data-lang="pl" onclick="applyLang('pl')" title="Polski">🇵🇱</button>
+      <button class="app-lang-btn" data-lang="en" onclick="applyLang('en')" title="English">🇬🇧</button>
+    </div>
+    <button class="header-dark-btn" id="btn-dark-mode" onclick="toggleDarkMode()" title="Toggle dark mode">&#9789;</button>
+    <button class="app-logout-btn" onclick="logout()" data-i18n="logout">Wyloguj</button>
   </div>
-  <span class="tb-user" id="tb-user">–</span>
-  <span class="tb-role" id="tb-role" style="display:none"></span>
-  <button class="tb-logout" onclick="logout()" data-i18n="logout">Wyloguj</button>
 </header>
 
 <div class="layout">

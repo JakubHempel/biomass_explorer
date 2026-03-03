@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<link rel="stylesheet" href="/static/admin-shared.css">
+<script>if(localStorage.getItem('biomass_dark_mode')==='1')document.body.classList.add('dark-mode');</script>
 <script src="/static/i18n.js"></script>
 <style>
 :root{
@@ -26,30 +28,15 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:'Inter',-apple-system,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;overflow:hidden}
 
-/* ── topbar ── */
-.topbar{height:52px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;box-shadow:var(--shadow-sm);z-index:600;position:relative}
-.tb-back{display:flex;align-items:center;gap:5px;color:var(--text-secondary);text-decoration:none;font-size:13px;font-weight:500;padding:5px 9px;border-radius:7px;transition:.15s}
-.tb-back:hover{background:var(--bg);color:var(--text)}
-.tb-title{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
-.tb-mode{font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;background:var(--primary-light);color:var(--primary-dark)}
-.tb-mode.edit{background:#fef3c7;color:#92400e}
-.tb-spacer{flex:1}
-.tb-user{font-size:12px;color:var(--text-muted)}
-.tb-logout{background:none;border:none;cursor:pointer;color:var(--text-muted);font-family:inherit;font-size:12px;padding:4px 8px;border-radius:6px;transition:.15s}
-.tb-logout:hover{color:var(--error)}
-/* lang switcher */
-.lang-switch{display:flex;gap:3px;align-items:center}
-.lang-btn{padding:2px 5px;border-radius:6px;border:1.5px solid transparent;cursor:pointer;font-size:15px;background:none;line-height:1;transition:all .12s;opacity:.55}
-.lang-btn:hover{opacity:1;background:var(--bg)}
-.lang-btn.active{opacity:1;border-color:var(--primary);background:var(--primary-light)}
+/* ── topbar handled by admin-shared.css ── */
 
 /* ── layout ── */
-.layout{display:flex;height:calc(100vh - 52px);overflow:hidden}
+.layout{display:flex;height:calc(100vh - var(--topbar-h));overflow:hidden}
 .panel{
   width:var(--panel);min-width:var(--panel);
   background:var(--surface);border-right:1px solid var(--border);
   display:flex;flex-direction:column;z-index:200;
-  height:calc(100vh - 52px);   /* explicit full height */
+  height:calc(100vh - var(--topbar-h));
   overflow:hidden;
 }
 .panel-scroll{
@@ -202,22 +189,33 @@ textarea{min-height:52px;resize:vertical}
 </head>
 <body>
 
-<!-- topbar -->
-<header class="topbar">
-  <a class="tb-back" href="/admin">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-    <span data-i18n="back">Admin</span>
-  </a>
-  <span style="color:var(--border)">|</span>
-  <span class="tb-title" id="tb-title">Nowe pole uprawne</span>
-  <span class="tb-mode" id="tb-mode">Nowe</span>
-  <div class="tb-spacer"></div>
-  <div class="lang-switch">
-    <button class="lang-btn" data-lang="pl" onclick="applyLang('pl')" data-i18n-title="lang_pl_title" title="Zmień na polski">🇵🇱</button>
-    <button class="lang-btn" data-lang="en" onclick="applyLang('en')" data-i18n-title="lang_en_title" title="Switch to English">🇬🇧</button>
+<!-- App Header -->
+<header class="app-header">
+  <div class="app-header-inner">
+    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
+      <img src="/static/radscan_logo_color.jpg" class="app-logo" alt="Radscan">
+    </a>
+    <div>
+      <div class="app-title">Biomass Explorer</div>
+      <span class="app-subtitle" id="tb-title" data-i18n="editor_tb_new">Nowe pole uprawne</span>
+    </div>
+    <div class="app-header-sep"></div>
+    <div class="app-header-nav">
+      <a class="app-header-back" href="/admin">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <span data-i18n="back">Admin</span>
+      </a>
+      <span class="app-mode-badge" id="tb-mode" data-i18n="editor_mode_new">Nowe</span>
+    </div>
+    <div class="app-header-spacer"></div>
+    <span class="app-user-badge" id="tb-user">–</span>
+    <div class="app-lang-switch">
+      <button class="app-lang-btn" data-lang="pl" onclick="applyLang('pl')" title="Polski">🇵🇱</button>
+      <button class="app-lang-btn" data-lang="en" onclick="applyLang('en')" title="English">🇬🇧</button>
+    </div>
+    <button class="header-dark-btn" id="btn-dark-mode" onclick="toggleDarkMode()" title="Toggle dark mode">&#9789;</button>
+    <button class="app-logout-btn" onclick="logout()" data-i18n="logout">Wyloguj</button>
   </div>
-  <span class="tb-user" id="tb-user">–</span>
-  <button class="tb-logout" onclick="logout()" data-i18n="logout">Wyloguj</button>
 </header>
 
 <!-- layout -->
@@ -435,7 +433,7 @@ function setNewMode() {
   editingFieldId = null;
   document.getElementById('tb-title').textContent = t('editor_tb_new');
   document.getElementById('tb-mode').textContent = t('mode_new');
-  document.getElementById('tb-mode').className = 'tb-mode';
+  document.getElementById('tb-mode').className = 'app-mode-badge';
   document.getElementById('btn-save-text').textContent = t('save_new_btn');
   document.getElementById('btn-save').classList.remove('edit-mode');
   document.getElementById('edit-geom-hint').style.display = 'none';
@@ -447,7 +445,7 @@ function setEditMode(field) {
   editingFieldId = field.field_id;
   document.getElementById('tb-title').textContent = t('editor_tb_edit', field.name);
   document.getElementById('tb-mode').textContent = t('mode_edit');
-  document.getElementById('tb-mode').className = 'tb-mode edit';
+  document.getElementById('tb-mode').className = 'app-mode-badge edit';
   document.getElementById('btn-save-text').textContent = t('save_edit_btn');
   document.getElementById('btn-save').classList.add('edit-mode');
   document.getElementById('edit-geom-hint').style.display = 'block';

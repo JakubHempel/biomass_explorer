@@ -46,6 +46,18 @@ const I18N = {
     tab_users:         'Użytkownicy',
     tab_fields:        'Pola uprawne',
 
+    // ── Info panel ─────────────────────────────────────────────────────────
+    info_title:        'O aplikacji',
+    info_app:          'Aplikacja',
+    info_name:         'Nazwa',
+    info_version:      'Wersja',
+    info_author:       'Autor',
+    info_desc_title:   'Opis',
+    info_desc_text:    'Panel administracyjny aplikacji Biomass Explorer. Zarządzaj użytkownikami, polami uprawnymi i dostępem do danych.',
+    info_link_map:     'Mapa',
+    info_link_fields:  'Pola',
+    info_link_editor:  'Edytor pól',
+
     // ── Admin – users table ────────────────────────────────────────────────
     users_card_title:  'Użytkownicy systemu',
     add_user:          'Dodaj użytkownika',
@@ -133,6 +145,7 @@ const I18N = {
     editor_tb_new:      'Nowe pole uprawne',
     editor_tb_edit:     (name) => `Edytujesz: ${name}`,
     mode_new:           'Nowe',
+    editor_mode_new:    'Nowe',
     mode_edit:          'Edycja',
     section_fields_db:  'Pola w bazie',
     loading_db:         'ładowanie…',
@@ -216,6 +229,18 @@ const I18N = {
     admin_desc:        'Manage users and cropland fields',
     tab_users:         'Users',
     tab_fields:        'Fields',
+
+    // ── Info panel ─────────────────────────────────────────────────────────
+    info_title:        'About',
+    info_app:          'Application',
+    info_name:         'Name',
+    info_version:      'Version',
+    info_author:       'Author',
+    info_desc_title:   'Description',
+    info_desc_text:    'Admin panel for Biomass Explorer. Manage users, cropland fields and data access.',
+    info_link_map:     'Map',
+    info_link_fields:  'Fields',
+    info_link_editor:  'Field Editor',
 
     // ── Admin – users table ────────────────────────────────────────────────
     users_card_title:  'System Users',
@@ -304,6 +329,7 @@ const I18N = {
     editor_tb_new:      'New Cropland',
     editor_tb_edit:     (name) => `Editing: ${name}`,
     mode_new:           'New',
+    editor_mode_new:    'New',
     mode_edit:          'Edit',
     section_fields_db:  'Fields in DB',
     loading_db:         'loading…',
@@ -358,8 +384,11 @@ const I18N = {
 
 // ── Core API ─────────────────────────────────────────────────────────────────
 
+// Use the same key as the main app (config.js uses 'biomass_lang')
+const _LANG_KEY = 'biomass_lang';
+
 function getCurrentLang() {
-  return localStorage.getItem('bm_lang') || 'pl';
+  return localStorage.getItem(_LANG_KEY) || 'pl';
 }
 
 /**
@@ -377,7 +406,7 @@ function t(key, ...args) {
  */
 function applyLang(lang) {
   if (!I18N[lang]) return;
-  localStorage.setItem('bm_lang', lang);
+  localStorage.setItem(_LANG_KEY, lang);
 
   // Update static elements
   document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -400,8 +429,8 @@ function applyLang(lang) {
   const titleKey = document.documentElement.dataset.i18nTitle;
   if (titleKey && I18N[lang][titleKey]) document.title = I18N[lang][titleKey];
 
-  // Update flag button states
-  document.querySelectorAll('.lang-btn').forEach(btn => {
+  // Update flag button states (both old .lang-btn and new .app-lang-btn)
+  document.querySelectorAll('.lang-btn, .app-lang-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.lang === lang);
   });
 
@@ -411,6 +440,7 @@ function applyLang(lang) {
 
 function initLang() {
   applyLang(getCurrentLang());
+  initDarkMode();
 }
 
 // ── Language switcher HTML helper ─────────────────────────────────────────────
@@ -418,10 +448,32 @@ function initLang() {
 function langSwitcherHTML() {
   const cur = getCurrentLang();
   return `
-    <div class="lang-switch">
-      <button class="lang-btn${cur==='pl'?' active':''}" data-lang="pl"
-        onclick="applyLang('pl')" data-i18n-title="lang_pl_title" title="Zmień na polski">🇵🇱</button>
-      <button class="lang-btn${cur==='en'?' active':''}" data-lang="en"
-        onclick="applyLang('en')" data-i18n-title="lang_en_title" title="Switch to English">🇬🇧</button>
+    <div class="app-lang-switch">
+      <button class="app-lang-btn${cur==='pl'?' active':''}" data-lang="pl"
+        onclick="applyLang('pl')" title="Polski">🇵🇱</button>
+      <button class="app-lang-btn${cur==='en'?' active':''}" data-lang="en"
+        onclick="applyLang('en')" title="English">🇬🇧</button>
     </div>`;
+}
+
+// ── Dark mode ─────────────────────────────────────────────────────────────────
+
+function toggleDarkMode() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  localStorage.setItem('biomass_dark_mode', isDark ? '1' : '0');
+  const btn = document.getElementById('btn-dark-mode');
+  if (btn) {
+    btn.classList.toggle('active', isDark);
+    btn.innerHTML = isDark ? '&#9788;' : '&#9789;';
+  }
+}
+
+function initDarkMode() {
+  const isDark = localStorage.getItem('biomass_dark_mode') === '1';
+  if (isDark) document.body.classList.add('dark-mode');
+  const btn = document.getElementById('btn-dark-mode');
+  if (btn) {
+    btn.classList.toggle('active', isDark);
+    btn.innerHTML = isDark ? '&#9788;' : '&#9789;';
+  }
 }

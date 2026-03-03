@@ -1021,18 +1021,18 @@
 .saved-fields-dropdown {
     background: var(--surface); border: 1.5px solid var(--border);
     border-radius: 8px; box-shadow: var(--shadow-md);
-    max-height: 200px; overflow-y: auto;
+    max-height: 260px; overflow-y: auto;
     margin-top: 4px;
 }
 .saved-field-item {
     display: flex; align-items: center; justify-content: space-between;
     padding: 8px 12px; cursor: pointer; transition: background 0.1s;
     border-bottom: 1px solid var(--border-light);
-    font-size: 0.74rem;
+    font-size: 0.74rem; gap: 6px;
 }
 .saved-field-item:last-child { border-bottom: none; }
 .saved-field-item:hover { background: #f1f5f9; }
-.saved-field-name { font-weight: 600; color: var(--text); }
+.saved-field-name { font-weight: 600; color: var(--text); display: block; }
 .saved-field-date { font-size: 0.62rem; color: #94a3b8; }
 .saved-field-remove {
     width: 20px; height: 20px; min-width: 20px;
@@ -1045,6 +1045,25 @@
 .saved-empty {
     padding: 12px; text-align: center;
     font-size: 0.72rem; color: #94a3b8; font-style: italic;
+}
+/* DB-field section label */
+.sfd-section-label {
+    padding: 5px 12px 3px;
+    font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .5px; color: #94a3b8;
+    background: #f8fafc; border-bottom: 1px solid var(--border-light);
+    position: sticky; top: 0; z-index: 1;
+}
+/* DB field row extras */
+.sfd-db-item { align-items: flex-start; }
+.sfd-sub {
+    display: block; font-size: 0.60rem; color: #94a3b8;
+    margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sfd-area {
+    flex-shrink: 0; font-size: 0.62rem; font-weight: 600;
+    color: var(--primary); font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap; margin-left: auto;
 }
 
 /* ==========================================================================
