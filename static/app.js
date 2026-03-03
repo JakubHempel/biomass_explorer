@@ -2,32 +2,217 @@
 //  COLLAPSIBLE SETUP CARD
 // =========================================================================
 let setupCardOpen = true;
+let persistentStressLayer = null;
+
+function clearPersistentStressLayer() {
+    if (persistentStressLayer && map && map.hasLayer(persistentStressLayer)) {
+        map.removeLayer(persistentStressLayer);
+    }
+    activeLayers = activeLayers.filter(function(layer) { return layer !== persistentStressLayer; });
+    const stressRow = document.querySelector('.lp-overlay-row[data-persistent-stress="1"]');
+    if (stressRow) stressRow.remove();
+    updateLayerCount();
+    persistentStressLayer = null;
+}
+
+async function refreshPersistentStressLayer(fieldId, start, end) {
+    if (!currentAOI || !start || !end) return;
+
+    try {
+        const res = await fetch(API_URL + '/visualize/map', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                field_id: fieldId,
+                start_date: start,
+                end_date: end,
+                indices: ['STRESS_HOTSPOTS'],
+                geojson: currentAOI,
+                cloud_cover: 20
+            })
+        });
+        if (!res.ok) return;
+
+        const layer = await res.json();
+        const hotspotNativeScale = Number(layer.native_scale || 10);
+        const nextLayer = L.tileLayer(layer.layer_url, {
+            opacity: 1.0,
+            maxNativeZoom: maxNativeZoomForScale(hotspotNativeScale),
+            maxZoom: 22,
+            zIndex: 1090,
+            pane: 'analysisPane'
+        });
+        nextLayer._idxKey = 'STRESS_HOTSPOTS';
+        // Keep a real ISO date for pixel queries, and store period label separately for UI.
+        nextLayer._date = end || start || '';
+        nextLayer._displayDate = (start && end) ? (start + ' → ' + end) : (end || start || '');
+        nextLayer._sensor = '';
+
+        clearPersistentStressLayer();
+        persistentStressLayer = nextLayer;
+        persistentStressLayer._persistentStress = true;
+        activeLayers.push(persistentStressLayer);
+        persistentStressLayer.addTo(map);
+        if (typeof persistentStressLayer.bringToFront === 'function') persistentStressLayer.bringToFront();
+        const stressCb = addOverlayToPanel(persistentStressLayer, 'STRESS_HOTSPOTS', persistentStressLayer._displayDate, '');
+        const stressRow = document.querySelector('#lp-overlays .lp-overlay-row:last-child');
+        if (stressRow) stressRow.dataset.persistentStress = '1';
+        if (stressCb) stressCb.checked = true;
+        ensureLegendTab('STRESS_HOTSPOTS');
+        updateLegend('STRESS_HOTSPOTS');
+    } catch (e) {
+        // Keep UI responsive even if hotspot layer fails.
+    }
+}
+
+function maxNativeZoomForScale(scaleMeters) {
+    if (!scaleMeters || scaleMeters <= 0) return 15;
+    const webMercatorMppAtZoom0 = 156543.03392804097;
+    const zoom = Math.round(Math.log2(webMercatorMppAtZoom0 / scaleMeters)) + 1;
+    return Math.max(8, Math.min(22, zoom));
+}
+
+function ensureLegendTab(idx) {
+    if (idx === 'RGB') return;
+    const tabs = document.getElementById('legend-tabs');
+    if (!tabs) return;
+    if (Array.from(tabs.querySelectorAll('.leg-tab')).some(t => t.dataset.idx === idx)) return;
+    const info = (typeof getIndexInfo === 'function') ? getIndexInfo(idx) : INDEX_INFO[idx];
+    const btn = document.createElement('div');
+    btn.className = 'leg-tab';
+    btn.dataset.idx = idx;
+    btn.innerText = info ? info.short : idx;
+    btn.onclick = () => updateLegend(idx);
+    tabs.appendChild(btn);
+}
+
+function getAnalysisIndices() {
+    return AUTO_ANALYSIS_INDICES.slice();
+}
+
+function getManualSelectedIndices() {
+    return Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
+}
+
+function _normHigher(v, low, high) {
+    if (v == null) return null;
+    return Math.max(0, Math.min(1, (v - low) / (high - low)));
+}
+
+function _normLower(v, low, high) {
+    if (v == null) return null;
+    return Math.max(0, Math.min(1, (high - v) / (high - low)));
+}
+
+function computeFastScoreFromSummary(summary) {
+    var components = [
+        { k: 'VHI', w: 0.40, n: _normHigher(summary.VHI, 20, 70) },
+        { k: 'TCI', w: 0.20, n: _normHigher(summary.TCI, 20, 80) },
+        { k: 'NDVI', w: 0.20, n: _normHigher(summary.NDVI, 0.20, 0.70) },
+        { k: 'NDMI', w: 0.15, n: _normHigher(summary.NDMI, -0.10, 0.30) },
+        { k: 'TVDI', w: 0.05, n: _normLower(summary.TVDI, 0.20, 0.80) }
+    ];
+    var weighted = 0;
+    var totalW = 0;
+    components.forEach(function(c) {
+        if (c.n == null) return;
+        weighted += c.n * c.w;
+        totalW += c.w;
+    });
+    if (totalW <= 0) return null;
+    return (weighted / totalW) * 10;
+}
+
+function _dateOnly(s) {
+    return String(s || '').slice(0, 10);
+}
+
+async function fetchTrendInfo(fieldId, startDate, endDate, currentScore) {
+    try {
+        const res = await fetch(API_URL + '/history/' + encodeURIComponent(fieldId));
+        if (!res.ok) return null;
+        const records = await res.json();
+        if (!Array.isArray(records) || records.length === 0) return null;
+
+        const start = new Date(startDate + 'T00:00:00');
+        const end = new Date(endDate + 'T00:00:00');
+        const periodDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
+        const prevEnd = new Date(start.getTime() - 86400000);
+        const prevStart = new Date(prevEnd.getTime() - (periodDays - 1) * 86400000);
+
+        const sums = { NDVI: 0, NDMI: 0, TCI: 0, TVDI: 0, VHI: 0 };
+        const counts = { NDVI: 0, NDMI: 0, TCI: 0, TVDI: 0, VHI: 0 };
+        records.forEach(function(r) {
+            const d = new Date(_dateOnly(r.date) + 'T00:00:00');
+            if (d < prevStart || d > prevEnd) return;
+            const map = { NDVI: r.ndvi, NDMI: r.ndmi, TCI: r.tci, TVDI: r.tvdi, VHI: r.vhi };
+            Object.keys(map).forEach(function(k) {
+                const v = map[k];
+                if (v == null || Number.isNaN(Number(v))) return;
+                sums[k] += Number(v);
+                counts[k] += 1;
+            });
+        });
+
+        const prevSummary = {};
+        Object.keys(sums).forEach(function(k) {
+            prevSummary[k] = counts[k] > 0 ? (sums[k] / counts[k]) : null;
+        });
+        const prevScore = computeFastScoreFromSummary(prevSummary);
+        if (prevScore == null) return null;
+        const delta = currentScore - prevScore;
+        return { prevScore: prevScore, delta: delta };
+    } catch (e) {
+        return null;
+    }
+}
+
+function updatePrimaryActionButtonLabel() {
+    var textEl = document.getElementById('btn-search-text');
+    if (!textEl) return;
+    var isManualMode = getManualSelectedIndices().length > 0;
+    textEl.innerText = isManualMode ? t('search_images') : t('check_field_condition');
+}
 
 function toggleSetupCard() {
     setupCardOpen = !setupCardOpen;
     document.getElementById('setup-body').classList.toggle('collapsed', !setupCardOpen);
     document.getElementById('setup-chevron').classList.toggle('collapsed', !setupCardOpen);
     var summary = document.getElementById('setup-summary');
+    if (!setupCardOpen) renderSetupSummary();
     summary.style.display = setupCardOpen ? 'none' : 'block';
+}
+
+function renderSetupSummary() {
+    var empty = '---';
+    var fieldName = document.getElementById('field_id').value.trim() || empty;
+    var start = document.getElementById('start_date').value;
+    var end = document.getElementById('end_date').value;
+    var indicesLabel = t('auto_indices_short');
+    var manual = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
+    if (manual.length > 0) indicesLabel = manual.join(', ');
+    var summary = document.getElementById('setup-summary');
+    summary.innerHTML =
+        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Pole' : 'Field') + '</span><span class="ss-value">' + fieldName + '</span></div>' +
+        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Okres' : 'Period') + '</span><span class="ss-value">' + (start || empty) + ' → ' + (end || empty) + '</span></div>' +
+        '<div class="ss-row"><span class="ss-label">' + t('indices') + '</span><span class="ss-value">' + indicesLabel + '</span></div>';
 }
 
 function collapseSetupCard() {
     if (!setupCardOpen) return;
-    var fieldName = document.getElementById('field_id').value.trim() || 'Field';
-    var start = document.getElementById('start_date').value;
-    var end = document.getElementById('end_date').value;
-    var indices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
-
     var summary = document.getElementById('setup-summary');
-    summary.innerHTML =
-        '<div class="ss-row"><span class="ss-label">Field</span><span class="ss-value">' + fieldName + '</span></div>' +
-        '<div class="ss-row"><span class="ss-label">Period</span><span class="ss-value">' + (start || '—') + ' → ' + (end || '—') + '</span></div>' +
-        '<div class="ss-row"><span class="ss-label">Indices</span><span class="ss-value">' + (indices.length > 0 ? indices.join(', ') : 'none') + '</span></div>';
+    renderSetupSummary();
 
     setupCardOpen = false;
     document.getElementById('setup-body').classList.add('collapsed');
     document.getElementById('setup-chevron').classList.add('collapsed');
     summary.style.display = 'block';
+}
+
+function refreshSetupSummaryTranslations() {
+    const summary = document.getElementById('setup-summary');
+    if (!summary || setupCardOpen) return;
+    renderSetupSummary();
 }
 
 function expandSetupCard() {
@@ -39,14 +224,117 @@ function expandSetupCard() {
 }
 
 // =========================================================================
-//  SUMMARY STATISTICS PANEL  (simple — period average only)
+//  SUMMARY STATISTICS PANEL
 // =========================================================================
-function buildSummaryPanel(periodSummary, requestedIndices) {
-    const panel = document.getElementById('summary-panel');
-    if (!periodSummary || requestedIndices.length === 0) { panel.innerHTML = ''; return; }
+function buildFieldConditionCard(fieldCondition, context) {
+    if (!fieldCondition) return '';
+    context = context || {};
+    var drivers = fieldCondition.drivers || [];
+    var timeseriesCount = context.timeseriesCount || 0;
+    var labelMap = {
+        Healthy: t('label_healthy'),
+        'Mostly healthy': t('label_mostly_healthy'),
+        Watch: t('label_watch'),
+        Stressed: t('label_stressed'),
+        Critical: t('label_critical')
+    };
+    var localizedLabel = labelMap[fieldCondition.label] || fieldCondition.label;
+    var driverNameMap = {
+        NDVI: t('driver_ndvi'),
+        NDMI: t('driver_ndmi'),
+        VHI: t('driver_vhi'),
+        TCI: t('driver_tci'),
+        TVDI: t('driver_tvdi')
+    };
+    var driverActionMap = {
+        NDVI: t('driver_action_ndvi'),
+        NDMI: t('driver_action_ndmi'),
+        VHI: t('driver_action_vhi'),
+        TCI: t('driver_action_tci'),
+        TVDI: t('driver_action_tvdi')
+    };
+    function severityLabel(pct) {
+        if (pct >= 75) return t('severity_high');
+        if (pct >= 45) return t('severity_moderate');
+        return t('severity_watch');
+    }
+    function stressLevelLabel(pct) {
+        if (pct >= 70) return t('stress_level_high');
+        if (pct >= 40) return t('stress_level_medium');
+        return t('stress_level_low');
+    }
+    var summaryText = '';
+    if (fieldCondition.label === 'Healthy') summaryText = t('field_condition_msg_healthy');
+    else if (fieldCondition.label === 'Mostly healthy') summaryText = t('field_condition_msg_mostly');
+    else if (fieldCondition.label === 'Watch') summaryText = t('field_condition_msg_watch');
+    else if (fieldCondition.label === 'Stressed') summaryText = t('field_condition_msg_stressed');
+    else summaryText = t('field_condition_msg_critical');
+    var coreCount = fieldCondition.index_breakdown ? Object.keys(fieldCondition.index_breakdown).length : 0;
+    var confidenceReason = t('field_condition_conf_reason', {
+        obs: timeseriesCount,
+        core: coreCount
+    });
+    var scoreLegendHover = '<div class="field-score-hover-legend">'
+        + '<div>0-3 ' + t('label_critical') + '</div>'
+        + '<div>3-5 ' + t('label_stressed') + '</div>'
+        + '<div>5-7 ' + t('label_watch') + '</div>'
+        + '<div>7-8.5 ' + t('label_mostly_healthy') + '</div>'
+        + '<div>8.5-10 ' + t('label_healthy') + '</div>'
+        + '</div>';
 
-    let html = '<div class="stats-section-label">Period Averages</div><div class="stats-grid">';
+    var driversHtml = drivers.length > 0
+        ? '<ul class="fc-drivers">' + drivers.map(function(d) {
+            var name = driverNameMap[d.index] || d.index;
+            var action = driverActionMap[d.index] || t('driver_action_default');
+            return '<li><b>' + name + '</b>: ' + severityLabel(d.damaged_pct) + ' - ' + action + '</li>';
+        }).join('') + '</ul>'
+        : '<div class="fc-empty">' + t('field_condition_no_drivers') + '</div>';
+
+    return '<div class="field-condition-card">'
+        + '<div class="field-condition-head">'
+        + '  <div class="field-condition-title">' + t('field_condition_title') + '</div>'
+        + '  <div class="field-condition-label">' + localizedLabel + '</div>'
+        + '</div>'
+        + '<div class="field-condition-score-row">'
+        + '  <div class="field-condition-score-wrap">'
+        + '    <div class="field-condition-score">' + fieldCondition.score_0_10.toFixed(1) + '</div>'
+        + '    <div class="field-condition-scale">/ 10</div>'
+        +       scoreLegendHover
+        + '  </div>'
+        + '</div>'
+        + '<div class="field-condition-meta">'
+        + '  <span>' + t('field_condition_confidence') + ': <b>' + fieldCondition.confidence + '</b></span>'
+        + '  <span>' + t('field_condition_stress_level') + ': <b>' + stressLevelLabel(fieldCondition.damaged_area_pct) + '</b></span>'
+        + '</div>'
+        + '<div class="field-condition-conf-note">' + confidenceReason + '</div>'
+        + '<div class="field-condition-summary">' + summaryText + '</div>'
+        + '<div class="field-condition-drivers-title">' + t('field_condition_drivers') + '</div>'
+        + driversHtml
+        + '</div>';
+}
+
+function toggleTechnicalSummary() {
+    var details = document.getElementById('technical-summary-details');
+    var btn = document.getElementById('btn-toggle-technical-summary');
+    if (!details || !btn) return;
+    var isHidden = details.style.display === 'none';
+    details.style.display = isHidden ? 'block' : 'none';
+    btn.innerText = isHidden ? t('hide_technical_indices') : t('show_technical_indices');
+}
+
+function buildSummaryPanel(periodSummary, requestedIndices, fieldCondition, showTechnicalDetails) {
+    const panel = document.getElementById('summary-panel');
+    if (!periodSummary) { panel.innerHTML = ''; return; }
+
+    let html = '';
+    html += buildFieldConditionCard(fieldCondition, {
+        timeseriesCount: lastAnalysisData && lastAnalysisData.timeseries ? lastAnalysisData.timeseries.length : 0
+    });
+    if (showTechnicalDetails) {
+        html += '<div class="stats-section-label">' + t('period_averages') + '</div><div class="stats-grid">';
+    }
     for (const idx of requestedIndices) {
+        if (!showTechnicalDetails) break;
         const val = periodSummary[idx];
         const info = INDEX_INFO[idx];
         const shortName = info ? info.short : idx;
@@ -56,16 +344,18 @@ function buildSummaryPanel(periodSummary, requestedIndices) {
         html += '<div class="stat-tile">'
               + '  <div class="stat-label">' + shortName + '</div>'
               + '  <div class="stat-value">' + formatStatValue(idx, val) + '</div>'
-              + '  <div class="stat-avg-hint">period avg</div>'
+              + '  <div class="stat-avg-hint">' + t('period_avg') + '</div>'
               + '  <div class="stat-condition ' + cond.cls + '"><span class="dot"></span>' + cond.label + '</div>'
               + '</div>';
     }
-    html += '</div>';
+    if (showTechnicalDetails) html += '</div>';
     panel.innerHTML = html;
-    panel.querySelectorAll('.stat-tile').forEach(function(tile, i) {
-        tile.classList.add('stat-tile-animate');
-        tile.style.animationDelay = (i * 0.05) + 's';
-    });
+    if (showTechnicalDetails) {
+        panel.querySelectorAll('.stat-tile').forEach(function(tile, i) {
+            tile.classList.add('stat-tile-animate');
+            tile.style.animationDelay = (i * 0.05) + 's';
+        });
+    }
 }
 
 // =========================================================================
@@ -86,30 +376,81 @@ function buildWarnings(periodSummary, requestedIndices, s2Count, lsCount) {
     if (missingS2.length > 0) {
         var names = missingS2.map(i => INDEX_INFO[i] ? INDEX_INFO[i].short : i).join(', ');
         if (hasS2Req && s2Count === 0) {
-            lines.push('<b>' + names + '</b> — no cloud-free <b>Sentinel-2</b> (optical) images found during this period.');
+            lines.push(t('warning_s2_no_images', { names: names }));
         } else {
-            lines.push('<b>' + names + '</b> — could not be computed (likely persistent cloud cover).');
+            lines.push(t('warning_cannot_compute_cloud', { names: names }));
         }
     }
     if (missingLs.length > 0) {
         var names = missingLs.map(i => INDEX_INFO[i] ? INDEX_INFO[i].short : i).join(', ');
         if (hasLsReq && lsCount === 0) {
-            lines.push('<b>' + names + '</b> — no cloud-free <b>Landsat 8/9</b> (thermal) images found. Thermal satellites revisit every 8–16 days.');
+            lines.push(t('warning_ls_no_images', { names: names }));
         } else {
-            lines.push('<b>' + names + '</b> — could not be computed (likely persistent cloud cover).');
+            lines.push(t('warning_cannot_compute_cloud', { names: names }));
         }
     }
 
     if (lines.length === 0) { panel.innerHTML = ''; return; }
 
     var html = '<div class="warning-box"><span class="warn-icon">&#9888;&#65039;</span><div>'
-        + '<div style="margin-bottom:4px;">Missing data for ' + missing.length + ' of ' + requestedIndices.length + ' indices:</div>'
+        + '<div style="margin-bottom:4px;">' + t('missing_data_title', { missing: missing.length, total: requestedIndices.length }) + '</div>'
         + '<ul style="margin:0;padding-left:18px;line-height:1.65;">'
         + lines.map(function(l) { return '<li>' + l + '</li>'; }).join('')
         + '</ul>'
-        + '<div style="margin-top:6px;font-size:0.66rem;opacity:0.8;">Try extending the date range or selecting a different time period.</div>'
+        + '<div style="margin-top:6px;font-size:0.66rem;opacity:0.8;">' + t('try_extend_period') + '</div>'
         + '</div></div>';
     panel.innerHTML = html;
+}
+
+function refreshResultsTranslations() {
+    if (!lastAnalysisData || !lastRequestedIndices) return;
+
+    const periodSummary = lastAnalysisData.period_summary || {};
+    const timeseries = lastAnalysisData.timeseries || [];
+    buildSummaryPanel(
+        periodSummary,
+        lastRequestedIndices,
+        lastAnalysisData.field_condition || null,
+        !!lastManualIndexSelection
+    );
+
+    const s2Dates = timeseries.filter(ti => ti.sensor === 'Sentinel-2');
+    const lsDates = timeseries.filter(ti => ti.sensor === 'Landsat 8/9');
+    if (lastManualIndexSelection) {
+        buildWarnings(periodSummary, lastRequestedIndices, s2Dates.length, lsDates.length);
+    } else {
+        document.getElementById('warnings-panel').innerHTML = '';
+    }
+
+    const cont = document.getElementById('dates-container');
+    if (!cont || timeseries.length === 0) return;
+
+    const selected = new Set(
+        Array.from(cont.querySelectorAll('.date-checkbox:checked')).map(cb => cb.dataset.sensor + '|' + cb.value)
+    );
+
+    let html = '';
+    if (s2Dates.length > 0) {
+        html += '<div class="sensor-group">';
+        html += '<div class="sensor-header"><span class="sensor-badge s2">' + t('optical') + '</span><div class="sensor-meta"><span class="sensor-count">' + s2Dates.length + ' ' + t('dates_suffix') + '</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Sentinel-2\', this); return false;">' + t('all').toLowerCase() + '</a></div></div>';
+        s2Dates.forEach(ti => {
+            html += '<div class="date-row"><input type="checkbox" class="date-checkbox" value="' + ti.date + '" data-sensor="Sentinel-2"><span>' + formatDate(ti.date) + '</span></div>';
+        });
+        html += '</div>';
+    }
+    if (lsDates.length > 0) {
+        html += '<div class="sensor-group">';
+        html += '<div class="sensor-header"><span class="sensor-badge ls">' + t('thermal') + '</span><div class="sensor-meta"><span class="sensor-count">' + lsDates.length + ' ' + t('dates_suffix') + '</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Landsat 8/9\', this); return false;">' + t('all').toLowerCase() + '</a></div></div>';
+        lsDates.forEach(ti => {
+            html += '<div class="date-row"><input type="checkbox" class="date-checkbox" value="' + ti.date + '" data-sensor="Landsat 8/9"><span>' + formatDate(ti.date) + '</span></div>';
+        });
+        html += '</div>';
+    }
+    cont.innerHTML = html;
+
+    Array.from(cont.querySelectorAll('.date-checkbox')).forEach(function(cb) {
+        cb.checked = selected.has(cb.dataset.sensor + '|' + cb.value);
+    });
 }
 
 // =========================================================================
@@ -126,7 +467,7 @@ function prepareChartData(timeseries, requestedIndices) {
     document.getElementById('chart-popup').style.display = 'none';
     const btn = document.getElementById('btn-chart-toggle');
     btn.style.display = chartHasData ? 'flex' : 'none';
-    document.getElementById('btn-chart-text').innerText = 'SHOW TIME SERIES CHART';
+    document.getElementById('btn-chart-text').innerText = t('show_chart');
 }
 
 function toggleChartPopup() {
@@ -136,9 +477,9 @@ function toggleChartPopup() {
 
     if (chartPopupVisible && chartHasData && lastAnalysisData) {
         popup.style.display = 'flex';
-        btnText.innerText = 'HIDE TIME SERIES CHART';
+        btnText.innerText = t('hide_chart');
 
-        const fieldName = document.getElementById('field_id').value.trim() || 'Field';
+        const fieldName = document.getElementById('field_id').value.trim() || (currentLang() === 'pl' ? 'Pole' : 'Field');
         const start = document.getElementById('start_date').value;
         const end = document.getElementById('end_date').value;
         document.getElementById('chart-popup-sub').innerText = fieldName + ' \u00B7 ' + start + ' \u2192 ' + end;
@@ -154,7 +495,7 @@ function toggleChartPopup() {
             popup.classList.remove('closing');
             if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
         }, 150);
-        btnText.innerText = 'SHOW TIME SERIES CHART';
+        btnText.innerText = t('show_chart');
         chartPopupVisible = false;
     }
 }
@@ -173,7 +514,7 @@ function buildChartTabs() {
     allBtn.type = 'button';
     allBtn.className = 'chart-tab tab-all active';
     allBtn.dataset.filter = 'all';
-    allBtn.innerText = 'All';
+    allBtn.innerText = t('all');
     allBtn.onclick = function() { chartActiveFilter = 'all'; setActiveChartTab('all'); buildPopupChart(); };
     container.appendChild(allBtn);
 
@@ -263,7 +604,15 @@ function buildPopupChart() {
 // =========================================================================
 function showStatsSkeleton() {
     const panel = document.getElementById('summary-panel');
-    let html = '<div class="skeleton" style="height:14px;width:120px;margin-bottom:10px;"></div><div class="stats-grid">';
+    let html = '';
+    html += '<div class="field-condition-card">';
+    html += '  <div class="skeleton" style="height:14px;width:170px;margin-bottom:10px;"></div>';
+    html += '  <div class="skeleton" style="height:44px;width:90px;margin-bottom:10px;"></div>';
+    html += '  <div class="skeleton" style="height:10px;width:80%;margin-bottom:8px;"></div>';
+    html += '  <div class="skeleton" style="height:10px;width:75%;margin-bottom:12px;"></div>';
+    html += '  <div class="skeleton" style="height:34px;width:100%;border-radius:10px;"></div>';
+    html += '</div>';
+    html += '<div class="stats-grid">';
     for (let i = 0; i < 6; i++) {
         html += '<div class="stat-tile skeleton-tile">'
               + '<div class="skeleton" style="height:10px;width:40%;margin:0 auto 8px;"></div>'
@@ -294,17 +643,23 @@ async function startAnalysis() {
     const fieldInput = document.getElementById('field_id');
     if (!fieldInput.value.trim()) {
         const counter = localStorage.getItem('biomass_field_counter') || '1';
-        fieldInput.value = 'Field_' + counter;
+        fieldInput.value = (currentLang() === 'pl' ? 'Pole_' : 'Field_') + counter;
     }
     const field_id = fieldInput.value.trim();
     const start    = document.getElementById('start_date').value;
     const end      = document.getElementById('end_date').value;
-    const indices  = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
+    const manualIndices = getManualSelectedIndices();
+    // In expert/manual mode, process strictly the user-selected indices only.
+    // Do not auto-inject field-score core indices into persistence/layers flow.
+    const analysisIndices = manualIndices.length > 0
+        ? manualIndices.slice()
+        : getAnalysisIndices();
+    const displayIndices = manualIndices.length > 0 ? manualIndices.slice() : [];
 
-    if (!start || !end) { showToast('Please select a time period.', 'warning'); return; }
-    if (!currentAOI) { showToast('Please select an area of interest using one of the methods (Parcel Search, Map Click, or GeoJSON).', 'warning'); return; }
-    if (indices.length === 0) { showToast('Please select at least one index to compute.', 'warning'); return; }
+    if (!start || !end) { showToast(t('toast_time_period'), 'warning'); return; }
+    if (!currentAOI) { showToast(t('toast_select_aoi'), 'warning'); return; }
 
+    clearPersistentStressLayer();
     clearAllOverlays();
 
     var resultCard = document.getElementById('result-card');
@@ -317,15 +672,16 @@ async function startAnalysis() {
     document.getElementById('warnings-panel').innerHTML = '';
     document.getElementById('btn-chart-toggle').style.display = 'none';
 
-    setStatus("Searching for cloud-free satellite images over your field...", "loading");
+    setStatus(t('status_searching'), "loading");
     setProgress(10);
     document.getElementById('btn-search').disabled = true;
-    document.getElementById('btn-search-text').innerText = 'SEARCHING...';
+    document.getElementById('btn-search-text').innerText = t('searching');
     document.getElementById('btn-search-spinner').style.display = 'inline-block';
+    collapseSetupCard();
 
     try {
         const currentQuery = {
-            field_id, start_date: start, end_date: end, indices,
+            field_id, start_date: start, end_date: end, indices: analysisIndices,
             geojson: currentAOI, cloud_cover: 20
         };
 
@@ -346,25 +702,30 @@ async function startAnalysis() {
 
         const data = await res.json();
         lastAnalysisData = data;
-        lastRequestedIndices = indices;
+        lastRequestedIndices = displayIndices;
+        lastManualIndexSelection = manualIndices.length > 0;
+        await refreshPersistentStressLayer(field_id, start, end);
 
         const cont = document.getElementById('dates-container');
         cont.innerHTML = '';
 
-        buildSummaryPanel(data.period_summary, indices);
+        buildSummaryPanel(data.period_summary, displayIndices, data.field_condition || null, lastManualIndexSelection);
+        prepareChartData(data.timeseries, displayIndices);
 
-        prepareChartData(data.timeseries, indices);
-
-        var allMissing = indices.every(function(i) { return data.period_summary[i] == null; });
+        var allMissing = analysisIndices.every(function(i) { return data.period_summary[i] == null; });
 
         if (data.timeseries.length === 0 || allMissing) {
-            buildWarnings(data.period_summary || {}, indices, 0, 0);
+            if (lastManualIndexSelection) {
+                buildWarnings(data.period_summary || {}, displayIndices, 0, 0);
+            } else {
+                document.getElementById('warnings-panel').innerHTML = '';
+            }
             document.getElementById('summary-panel').innerHTML = '';
             document.getElementById('dates-container').innerHTML = '';
             document.getElementById('btn-chart-toggle').style.display = 'none';
             document.getElementById('btn-load').style.display = 'none';
             document.querySelector('#result-card label[style]').style.display = 'none';
-            setStatus("No cloud-free images were found for this period. Try a wider date range.", "warning");
+            setStatus(t('status_no_images'), "warning");
         } else {
             document.getElementById('btn-load').style.display = '';
             document.querySelector('#result-card label[style]').style.display = '';
@@ -372,12 +733,16 @@ async function startAnalysis() {
             const s2Dates = data.timeseries.filter(t => t.sensor === 'Sentinel-2');
             const lsDates = data.timeseries.filter(t => t.sensor === 'Landsat 8/9');
 
-            buildWarnings(data.period_summary || {}, indices, s2Dates.length, lsDates.length);
+            if (lastManualIndexSelection) {
+                buildWarnings(data.period_summary || {}, displayIndices, s2Dates.length, lsDates.length);
+            } else {
+                document.getElementById('warnings-panel').innerHTML = '';
+            }
 
             let html = '';
             if (s2Dates.length > 0) {
                 html += '<div class="sensor-group">';
-                html += '<div class="sensor-header"><span class="sensor-badge s2">Optical</span><div class="sensor-meta"><span class="sensor-count">' + s2Dates.length + ' dates</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Sentinel-2\', this); return false;">all</a></div></div>';
+                html += '<div class="sensor-header"><span class="sensor-badge s2">' + t('optical') + '</span><div class="sensor-meta"><span class="sensor-count">' + s2Dates.length + ' ' + t('dates_suffix') + '</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Sentinel-2\', this); return false;">' + t('all').toLowerCase() + '</a></div></div>';
                 s2Dates.forEach(t => {
                     html += '<div class="date-row"><input type="checkbox" class="date-checkbox" value="' + t.date + '" data-sensor="Sentinel-2"><span>' + formatDate(t.date) + '</span></div>';
                 });
@@ -385,7 +750,7 @@ async function startAnalysis() {
             }
             if (lsDates.length > 0) {
                 html += '<div class="sensor-group">';
-                html += '<div class="sensor-header"><span class="sensor-badge ls">Thermal</span><div class="sensor-meta"><span class="sensor-count">' + lsDates.length + ' dates</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Landsat 8/9\', this); return false;">all</a></div></div>';
+                html += '<div class="sensor-header"><span class="sensor-badge ls">' + t('thermal') + '</span><div class="sensor-meta"><span class="sensor-count">' + lsDates.length + ' ' + t('dates_suffix') + '</span><a href="#" class="select-all-link" onclick="toggleSensorDates(\'Landsat 8/9\', this); return false;">' + t('all').toLowerCase() + '</a></div></div>';
                 lsDates.forEach(t => {
                     html += '<div class="date-row"><input type="checkbox" class="date-checkbox" value="' + t.date + '" data-sensor="Landsat 8/9"><span>' + formatDate(t.date) + '</span></div>';
                 });
@@ -396,13 +761,12 @@ async function startAnalysis() {
 
             const total = s2Dates.length + lsDates.length;
             const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-            setStatus("Analysis complete — " + total + " cloud-free observations found in " + elapsed + "s.", "success");
+            setStatus(t('status_complete', { total: total, elapsed: elapsed }), "success");
 
             if (field_id && currentAOI) saveFieldToRecent(field_id, currentAOI, null);
         }
         setProgress(100);
         setTimeout(() => setProgress(-1), 800);
-        setTimeout(collapseSetupCard, 600);
     } catch(e) {
         console.error(e);
         setStatus("Error: " + e.message, "error");
@@ -412,8 +776,15 @@ async function startAnalysis() {
     }
 
     document.getElementById('btn-search').disabled = false;
-    document.getElementById('btn-search-text').innerText = 'SEARCH FOR IMAGES';
+    updatePrimaryActionButtonLabel();
     document.getElementById('btn-search-spinner').style.display = 'none';
+}
+
+async function showStressHotspotsOnMap() {
+    const fieldId = (document.getElementById('field_id').value || 'field').trim() || 'field';
+    const start = document.getElementById('start_date').value;
+    const end = document.getElementById('end_date').value;
+    await refreshPersistentStressLayer(fieldId, start, end);
 }
 
 // =========================================================================
@@ -422,15 +793,18 @@ async function startAnalysis() {
 async function loadSelectedLayers() {
     const checkedItems = Array.from(document.querySelectorAll('.date-checkbox:checked'))
         .map(cb => ({ date: cb.value, sensor: cb.dataset.sensor }));
-    const allIndices = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(cb => cb.value);
+    const allIndices = (lastRequestedIndices && lastRequestedIndices.length > 0)
+        ? lastRequestedIndices.slice()
+        : getAnalysisIndices();
+    const automaticOnlyMode = !lastManualIndexSelection;
 
-    if (checkedItems.length === 0) { showToast('Please select at least one date from the list above.', 'warning'); return; }
-    if (!currentAOI) { showToast('No area of interest set.', 'warning'); return; }
+    if (checkedItems.length === 0) { showToast(t('toast_select_date'), 'warning'); return; }
+    if (!currentAOI) { showToast(t('toast_no_aoi'), 'warning'); return; }
 
-    setStatus("Generating map overlays...", "loading");
+    setStatus(currentLang() === 'pl' ? 'Generowanie nakładek mapowych...' : "Generating map overlays...", "loading");
     setProgress(5);
     document.getElementById('btn-load').disabled = true;
-    document.getElementById('btn-load-text').innerText = 'LOADING...';
+    document.getElementById('btn-load-text').innerText = t('loading');
     document.getElementById('btn-load-spinner').style.display = 'inline-block';
     zoomToAOI();
 
@@ -440,6 +814,9 @@ async function loadSelectedLayers() {
     document.getElementById('lp-opacity-val').innerText = '100%';
 
     const batchRequests = checkedItems.map(({ date, sensor }) => {
+        if (automaticOnlyMode) {
+            return { date, sensor, indices: ['RGB'] };
+        }
         const dateIndices = allIndices.filter(idx => {
             if (sensor === 'Sentinel-2') return S2_INDICES.has(idx);
             if (sensor === 'Landsat 8/9') return LS_INDICES.has(idx);
@@ -449,7 +826,7 @@ async function loadSelectedLayers() {
     });
 
     const totalDates = batchRequests.length;
-    let completedDates = 0, loaded = 0, failed = 0, firstLayerShown = false;
+    let completedDates = 0, loaded = 0, failed = 0;
 
     const promises = batchRequests.map(({ date, sensor, indices }) =>
         fetch(API_URL + '/visualize/batch', {
@@ -475,7 +852,7 @@ async function loadSelectedLayers() {
         if (result.status === 'error') {
             console.error('Batch failed for', result.date, result.error);
             failed++;
-            setStatus("Loading layers... " + completedDates + " / " + totalDates + " dates processed", "loading");
+            setStatus(t('status_loading_overlays', { done: completedDates, total: totalDates, elapsed: '' }), "loading");
             continue;
         }
 
@@ -484,31 +861,29 @@ async function loadSelectedLayers() {
 
         for (const layer of data.layers) {
             const idx = layer.index_name;
-            const tileLayer = L.tileLayer(layer.layer_url, { opacity: 1.0, maxNativeZoom: 15, maxZoom: 22 });
+            const sensorNativeScale = sensor === 'Landsat 8/9' ? 30 : 10;
+            const nativeScale = Number(layer.native_scale || sensorNativeScale);
+            const tileLayer = L.tileLayer(layer.layer_url, {
+                opacity: 1.0,
+                maxNativeZoom: maxNativeZoomForScale(nativeScale),
+                maxZoom: 22,
+                zIndex: 1000,
+                pane: 'analysisPane'
+            });
             tileLayer._idxKey = idx;
             tileLayer._date = date;
             tileLayer._sensor = sensor;
             activeLayers.push(tileLayer);
-            addOverlayToPanel(tileLayer, idx, date, sensor);
+            const overlayCb = addOverlayToPanel(tileLayer, idx, date, sensor);
+            tileLayer._overlayCb = overlayCb || null;
 
-            if (idx !== 'RGB' && !Array.from(document.querySelectorAll('.leg-tab')).some(t => t.dataset.idx === idx)) {
-                const btn = document.createElement('div');
-                btn.className = 'leg-tab'; btn.dataset.idx = idx;
-                btn.innerText = INDEX_INFO[idx] ? INDEX_INFO[idx].short : idx;
-                btn.onclick = () => updateLegend(idx);
-                document.getElementById('legend-tabs').appendChild(btn);
-            }
+            ensureLegendTab(idx);
 
-            if (!firstLayerShown && idx !== 'RGB') {
-                tileLayer.addTo(map);
-                updateLegend(idx);
-                const cbs = document.querySelectorAll('.lp-overlay-cb');
-                if (cbs.length > 0) cbs[cbs.length - 1].checked = true;
-                firstLayerShown = true;
-            }
+            // Do not auto-show any loaded index/RGB layer.
+            // Layers are added unchecked in the panel and user controls visibility.
             loaded++;
         }
-        setStatus("Loading layers... " + completedDates + " / " + totalDates + " dates processed" + elapsed, "loading");
+        setStatus(t('status_loading_overlays', { done: completedDates, total: totalDates, elapsed: elapsed }), "loading");
     }
 
     if (!layersPanelOpen && loaded > 0) toggleLayersPanel();
@@ -516,12 +891,12 @@ async function loadSelectedLayers() {
     setProgress(100);
     setTimeout(() => setProgress(-1), 600);
 
-    if (failed > 0 && loaded > 0) setStatus("Map layers loaded (" + loaded + " OK, " + failed + " date(s) failed). Toggle layers in the panel.", "warning");
-    else if (loaded > 0) setStatus("Map ready — " + loaded + " layers loaded. Toggle visibility in the layer panel.", "success");
-    else setStatus("Could not load any map layers. The selected dates may not have matching index data.", "error");
+    if (failed > 0 && loaded > 0) setStatus(t('status_layers_partial', { loaded: loaded, failed: failed }), "warning");
+    else if (loaded > 0) setStatus(t('status_layers_ready', { loaded: loaded }), "success");
+    else setStatus(t('status_layers_none'), "error");
 
     document.getElementById('btn-load').disabled = false;
-    document.getElementById('btn-load-text').innerText = 'VISUALIZE ON MAP';
+    document.getElementById('btn-load-text').innerText = t('visualize_map');
     document.getElementById('btn-load-spinner').style.display = 'none';
 }
 
@@ -575,6 +950,11 @@ function closeMobileSidebar() {
 document.addEventListener('keydown', function(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
 
+    if ((e.key === 'W' || e.key === 'w') && e.shiftKey) {
+        openWelcomePanel();
+        return;
+    }
+
     switch (e.key) {
         case 'Escape':
             cancelMeasure();
@@ -609,17 +989,20 @@ document.addEventListener('keydown', function(e) {
 (function initFieldName() {
     const counter = parseInt(localStorage.getItem('biomass_field_counter') || '0', 10) + 1;
     localStorage.setItem('biomass_field_counter', counter);
-    document.getElementById('field_id').placeholder = 'e.g. Field_' + counter;
+    document.getElementById('field_id').placeholder = (currentLang() === 'pl' ? 'np. Pole_' : 'e.g. Field_') + counter;
 })();
 
 // =========================================================================
-//  DATE AUTO-SUGGESTION (end date = start + 30 days)
+//  DATE AUTO-SUGGESTION (end date = start + 1 month)
 // =========================================================================
 document.getElementById('start_date').addEventListener('change', function() {
     const endInput = document.getElementById('end_date');
     if (this.value && !endInput.value) {
         const start = new Date(this.value);
-        start.setDate(start.getDate() + 30);
+        const day = start.getDate();
+        start.setMonth(start.getMonth() + 1);
+        // If month rollover overflowed day (e.g. Jan 31 -> Mar 3), clamp to last day of previous month.
+        if (start.getDate() < day) start.setDate(0);
         endInput.value = start.toISOString().split('T')[0];
     }
 });
@@ -644,14 +1027,14 @@ function validateDates() {
     var today = new Date().toISOString().split('T')[0];
     if (start && start > today) {
         startEl.classList.add('input-error');
-        msgEl.textContent = 'Start date is in the future — no satellite data available.';
+        msgEl.textContent = t('validation_start_future');
         msgEl.classList.add('val-error', 'visible');
         updateSearchBtn();
         return false;
     }
     if (end && end > today) {
         endEl.classList.add('input-error');
-        msgEl.textContent = 'End date is in the future — no satellite data available yet.';
+        msgEl.textContent = t('validation_end_future');
         msgEl.classList.add('val-error', 'visible');
         updateSearchBtn();
         return false;
@@ -661,7 +1044,7 @@ function validateDates() {
         if (end < start) {
             startEl.classList.add('input-error');
             endEl.classList.add('input-error');
-            msgEl.textContent = 'End date must be after the start date.';
+            msgEl.textContent = t('validation_end_before_start');
             msgEl.classList.add('val-error', 'visible');
             updateSearchBtn();
             return false;
@@ -669,7 +1052,7 @@ function validateDates() {
         var diffMs = new Date(end) - new Date(start);
         var diffDays = Math.round(diffMs / 86400000);
         if (diffDays > 365) {
-            msgEl.textContent = 'Range is ' + diffDays + ' days — very long periods may be slow.';
+            msgEl.textContent = t('validation_long_range', { days: diffDays });
             msgEl.classList.add('val-error', 'visible');
         }
         startEl.classList.add('input-success');
@@ -698,11 +1081,11 @@ document.getElementById('end_date').addEventListener('change', validateDates);
                 throw new Error('Not a valid coordinates array');
             }
             textarea.classList.add('input-success');
-            msgEl.textContent = 'Valid coordinate array (' + coords[0].length + ' vertices).';
+            msgEl.textContent = t('validation_geojson_ok', { count: coords[0].length });
             msgEl.classList.add('val-success', 'visible');
         } catch(e) {
             textarea.classList.add('input-error');
-            msgEl.textContent = 'Invalid JSON — expected [[[lon, lat], ...]].';
+            msgEl.textContent = t('validation_geojson_bad');
             msgEl.classList.add('val-error', 'visible');
         }
     });
@@ -712,15 +1095,15 @@ function updateSearchBtn() {
     var btn = document.getElementById('btn-search');
     var start = document.getElementById('start_date').value;
     var end = document.getElementById('end_date').value;
-    var indices = document.querySelectorAll('input[name="idx"]:checked');
     var hasAOI = !!currentAOI;
 
     var datesOk = start && end && end >= start;
     var today = new Date().toISOString().split('T')[0];
     if (start > today || end > today) datesOk = false;
 
-    var ready = datesOk && indices.length > 0 && hasAOI;
+    var ready = datesOk && hasAOI;
     btn.disabled = !ready;
+    updatePrimaryActionButtonLabel();
 }
 
 document.querySelectorAll('input[name="idx"]').forEach(function(cb) {
@@ -733,6 +1116,7 @@ document.getElementById('end_date').addEventListener('change', updateSearchBtn);
 var origSetAOI = setAOI;
 setAOI = function(geojson, info) {
     origSetAOI(geojson, info);
+    clearPersistentStressLayer();
     updateSearchBtn();
 };
 
@@ -779,6 +1163,18 @@ toggleAboutPanel = function() {
 // =========================================================================
 function startOnboardingTour() {
     if (typeof window.driver === 'undefined') return;
+    const sidebarEl = document.getElementById('sidebar');
+    const layersBodyEl = document.getElementById('lp-body');
+    const tourUiState = {
+        sidebarWasCollapsed: !!(sidebarEl && sidebarEl.classList.contains('collapsed')),
+        setupWasCollapsed: !setupCardOpen,
+        layersWasCollapsed: !!(layersBodyEl && layersBodyEl.style.display === 'none')
+    };
+
+    // Ensure guided elements are visible before starting tour.
+    if (tourUiState.sidebarWasCollapsed) toggleSidebar();
+    if (tourUiState.setupWasCollapsed) expandSetupCard();
+    if (tourUiState.layersWasCollapsed) toggleLayersPanel();
 
     const driverObj = window.driver.js.driver({
         showProgress: true,
@@ -787,21 +1183,21 @@ function startOnboardingTour() {
         stagePadding: 8,
         stageRadius: 12,
         popoverClass: 'biomass-tour-popover',
-        nextBtnText: 'Next &rarr;',
-        prevBtnText: '&larr; Back',
-        doneBtnText: 'Start exploring!',
+        nextBtnText: t('tour_next'),
+        prevBtnText: t('tour_prev'),
+        doneBtnText: t('tour_done'),
         steps: [
             {
                 popover: {
-                    title: 'Welcome to Biomass Explorer! 🌍',
-                    description: 'This tool uses Sentinel-2 and Landsat satellite imagery to monitor crop health, vegetation, and drought over your fields.<br><br>Let\'s take a quick tour of the key features. You can replay this guide anytime by pressing <kbd>G</kbd>.',
+                    title: t('tour_welcome_title'),
+                    description: t('tour_welcome_desc_html'),
                 }
             },
             {
                 element: '#setup-card',
                 popover: {
-                    title: 'Step 1 — Analysis Setup',
-                    description: 'This panel has three sections:<br>• <b>Field & Time</b> — name your field and pick a date range<br>• <b>Indices</b> — choose which vegetation or drought indices to compute<br>• <b>Area of Interest</b> — select your field boundary',
+                    title: t('tour_setup_title'),
+                    description: t('tour_setup_desc_html'),
                     side: 'right',
                     align: 'start'
                 }
@@ -809,63 +1205,114 @@ function startOnboardingTour() {
             {
                 element: '#aoi-tabs',
                 popover: {
-                    title: 'Choose Your Field',
-                    description: '<b>Parcel Search</b> — find by cadastral ID or region name<br><b>Map Click</b> — click directly on the map<br><b>GeoJSON</b> — paste custom coordinates<br><br>After loading, an <em>Edit Boundary</em> button lets you adjust the polygon.',
+                    title: t('tour_aoi_title'),
+                    description: t('tour_aoi_desc_html'),
                     side: 'right'
                 }
             },
             {
                 element: '#btn-search',
                 popover: {
-                    title: 'Run the Analysis',
-                    description: 'After setting your AOI, dates, and indices — click here to search for cloud-free satellite images. Results will appear below with period averages and available dates.',
+                    title: t('tour_run_title'),
+                    description: t('tour_run_desc_html'),
                     side: 'right'
                 }
             },
             {
                 element: '#map',
                 popover: {
-                    title: 'Interactive Map',
-                    description: 'Your field boundary and satellite index overlays appear here. After running an analysis, select dates and click <b>Visualize on Map</b> to load layers.',
+                    title: t('tour_map_title'),
+                    description: t('tour_map_desc_html'),
                     side: 'left'
                 }
             },
             {
                 element: '#map-tools',
                 popover: {
-                    title: 'Map Tools',
-                    description: 'Four tools at your disposal:<br>• <b>Ruler</b> — measure distances<br>• <b>Polygon</b> — measure areas<br>• <b>Info</b> — click any pixel to see its index value<br>• <b>Target</b> — recenter on your field (appears after AOI is set)',
+                    title: t('tour_tools_title'),
+                    description: t('tour_tools_desc_html'),
                     side: 'right'
                 }
             },
             {
                 element: '#layers-panel',
                 popover: {
-                    title: 'Layer Control',
-                    description: 'Switch between Satellite and Street base maps, toggle cadastral boundaries, and manage loaded index overlays. The opacity slider controls overlay transparency.',
+                    title: t('tour_layers_title'),
+                    description: t('tour_layers_desc_html'),
                     side: 'left'
                 }
             },
             {
                 element: '#btn-dark-mode',
                 popover: {
-                    title: 'Keyboard Shortcuts',
-                    description: '<kbd>D</kbd> Dark mode &middot; <kbd>L</kbd> Layers panel &middot; <kbd>F</kbd> Recenter on field &middot; <kbd>G</kbd> This guided tour &middot; <kbd>?</kbd> About panel &middot; <kbd>Esc</kbd> Cancel tools',
+                    title: t('tour_shortcuts_title'),
+                    description: t('tour_shortcuts_desc_html'),
                     side: 'bottom'
                 }
             }
         ],
         onDestroyed: function() {
             localStorage.setItem('biomass_tour_done', '1');
+            // Restore previous layout state after tour closes.
+            if (tourUiState.setupWasCollapsed) collapseSetupCard();
+            if (tourUiState.layersWasCollapsed) toggleLayersPanel();
+            if (tourUiState.sidebarWasCollapsed) toggleSidebar();
         }
     });
 
-    driverObj.drive();
+    // Wait for sidebar animation if we had to open it.
+    setTimeout(function() { driverObj.drive(); }, tourUiState.sidebarWasCollapsed ? 340 : 40);
+}
+
+function initWelcomePanel() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (!overlay) return;
+    const langBtns = overlay.querySelectorAll('.welcome-lang-btn');
+    const continueBtn = document.getElementById('welcome-continue');
+    let selectedLang = localStorage.getItem('biomass_lang') || 'en';
+    if (!selectedLang || (selectedLang !== 'en' && selectedLang !== 'pl')) selectedLang = 'en';
+
+    function syncLangButtons() {
+        langBtns.forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.lang === selectedLang);
+        });
+    }
+
+    langBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            selectedLang = this.dataset.lang || 'en';
+            syncLangButtons();
+        });
+    });
+
+    continueBtn.addEventListener('click', function() {
+        setLanguage(selectedLang);
+        overlay.style.display = 'none';
+        localStorage.setItem('biomass_welcome_done', '1');
+        if (!localStorage.getItem('biomass_tour_done')) setTimeout(startOnboardingTour, 120);
+    });
+
+    syncLangButtons();
+}
+
+function openWelcomePanel() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
 }
 
 // Auto-start tour on first visit only
 (function checkOnboarding() {
-    if (!localStorage.getItem('biomass_tour_done')) {
+    initWelcomePanel();
+    const welcomeDone = localStorage.getItem('biomass_welcome_done');
+    const tourDone = localStorage.getItem('biomass_tour_done');
+    const welcomeOverlay = document.getElementById('welcome-overlay');
+    if (!welcomeDone && welcomeOverlay) {
+        welcomeOverlay.style.display = 'flex';
+    } else if (!tourDone) {
         setTimeout(startOnboardingTour, 800);
     }
 })();
+
+window.refreshResultsTranslations = refreshResultsTranslations;
+window.refreshSetupSummaryTranslations = refreshSetupSummaryTranslations;

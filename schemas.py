@@ -123,15 +123,35 @@ class IndexStats(BaseModel):
     p90: Optional[float] = None
     count: int = 0
 
+class FieldConditionDriver(BaseModel):
+    index: str
+    damaged_pct: float
+    score_0_10: float
+    note: str
+
+class FieldConditionResponse(BaseModel):
+    score_0_10: float
+    label: str
+    confidence: str
+    confidence_score: float
+    base_score_0_10: float
+    damage_penalty: float
+    variability_penalty: float
+    damaged_area_pct: float
+    drivers: List[FieldConditionDriver] = []
+    index_breakdown: Dict[str, Dict[str, float]] = {}
+
 class BiomassResponse(BaseModel):
     metadata: Dict[str, str]
     period_summary: Dict[str, Optional[float]]
     period_stats: Dict[str, IndexStats] = {}   # richer statistics per index
+    field_condition: Optional[FieldConditionResponse] = None
     timeseries: List[TimeseriesPoint]
 
 class MapResponse(BaseModel):
     layer_url: str
     index_name: str
+    native_scale: Optional[int] = None
 
 
 class BatchLayerRequest(BaseModel):
@@ -146,6 +166,7 @@ class BatchLayerRequest(BaseModel):
 class BatchLayerItem(BaseModel):
     layer_url: str
     index_name: str
+    native_scale: Optional[int] = None
 
 
 class BatchLayerResponse(BaseModel):
@@ -163,6 +184,8 @@ class PixelQueryRequest(BaseModel):
     indices: List[str]
     geojson: dict
     cloud_cover: int = 20
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class PixelQueryResponse(BaseModel):

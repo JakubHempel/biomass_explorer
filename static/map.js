@@ -7,6 +7,11 @@ const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
 const map = L.map('map', { center: [52.0, 19.0], zoom: 7, maxZoom: 22, layers: [satellite] });
 const baseMaps = { satellite, osm };
 
+// Dedicated pane for analysis rasters so they always stay above basemaps.
+map.createPane('analysisPane');
+map.getPane('analysisPane').style.zIndex = 450;
+map.getPane('analysisPane').style.pointerEvents = 'none';
+
 L.control.scale({ metric: true, imperial: false }).addTo(map);
 const miniMap = new L.Control.MiniMap(L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'), { toggleDisplay: true, position: 'bottomleft' }).addTo(map);
 
@@ -39,6 +44,10 @@ L.DomEvent.disableClickPropagation(sidebarToggleEl);
 
 let activeLayers = [];   // { layer, idx, date, sensor, label }
 let aoiLayer = null;
+let currentLegendIdx = null;
+let lastAoiStatusData = null;
+let lastParcelPanelData = null;
+let lastPickPanelData = null;
 
 // =========================================================================
 //  SHARED AOI STATE
@@ -51,6 +60,7 @@ let mapPickActive = false;
 // =========================================================================
 let lastAnalysisData = null;
 let lastRequestedIndices = [];
+let lastManualIndexSelection = false;
 
 // =========================================================================
 //  AOI TAB SWITCHING
@@ -77,14 +87,16 @@ function setAOI(geojson, info) {
 
     const statusEl = document.getElementById('aoi-status');
     if (info) {
+        lastAoiStatusData = { type: 'parcel', info: Object.assign({}, info) };
         let html = '<span class="aoi-ok-icon">&#10003;</span>';
-        html += '<span>Parcel <b>' + (info.parcel_id || '—') + '</b>';
+        html += '<span>' + (currentLang() === 'pl' ? 'Działka' : 'Parcel') + ' <b>' + (info.parcel_id || '—') + '</b>';
         if (info.region)  html += ' &middot; ' + info.region;
         if (info.commune) html += ' &middot; ' + info.commune;
         html += '</span>';
         statusEl.innerHTML = html;
     } else {
-        statusEl.innerHTML = '<span class="aoi-ok-icon">&#10003;</span><span>Custom polygon loaded</span>';
+        lastAoiStatusData = { type: 'custom' };
+        statusEl.innerHTML = '<span class="aoi-ok-icon">&#10003;</span><span>' + (currentLang() === 'pl' ? 'Wczytano własny poligon' : 'Custom polygon loaded') + '</span>';
     }
     statusEl.style.display = 'flex';
 
@@ -103,30 +115,31 @@ function setAOI(geojson, info) {
 // =========================================================================
 async function searchParcel() {
     const query = document.getElementById('parcel_query').value.trim();
-    if (!query) { showToast('Please enter a parcel ID or region name + number.', 'warning'); return; }
+    if (!query) { showToast(t('toast_parcel_query'), 'warning'); return; }
 
     const btn = document.getElementById('btn-parcel-search');
     const txt = document.getElementById('btn-parcel-text');
     const spin = document.getElementById('btn-parcel-spinner');
-    btn.disabled = true; txt.innerText = 'SEARCHING...'; spin.style.display = 'inline-block';
+    btn.disabled = true; txt.innerText = t('searching'); spin.style.display = 'inline-block';
 
     try {
         const res = await fetch(API_URL + '/api/uldk/search?q=' + encodeURIComponent(query));
-        if (res.status === 404) { throw new Error('No parcel found. Check the ID or name.'); }
+        if (res.status === 404) { throw new Error(t('toast_parcel_none')); }
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || 'ULDK lookup failed (' + res.status + ')');
         }
         const data = await res.json();
-        if (data.count === 0 || !data.results.length) throw new Error('No parcel found.');
+        if (data.count === 0 || !data.results.length) throw new Error(t('toast_parcel_none'));
         const first = data.results[0];
         setAOI(first.geojson, first);
+        lastParcelPanelData = { parcel: Object.assign({}, first), count: data.count };
         const infoEl = document.getElementById('parcel-info');
         infoEl.innerHTML = buildParcelInfoHTML(first, data.count);
         infoEl.style.display = 'block';
     } catch(e) { showToast(e.message, 'error'); }
 
-    btn.disabled = false; txt.innerText = 'FIND PARCEL'; spin.style.display = 'none';
+    btn.disabled = false; txt.innerText = t('find_parcel'); spin.style.display = 'none';
 }
 
 // =========================================================================
@@ -139,14 +152,14 @@ function enableMapPick() {
     mapPickActive = true;
     document.getElementById('map').classList.add('map-pick-active');
     document.getElementById('btn-pick').classList.add('active');
-    document.getElementById('btn-pick-text').innerText = 'CLICK ON MAP...';
+    document.getElementById('btn-pick-text').innerText = t('click_on_map');
     map.on('click', onMapPickClick);
 }
 function disableMapPick() {
     mapPickActive = false;
     document.getElementById('map').classList.remove('map-pick-active');
     document.getElementById('btn-pick').classList.remove('active');
-    document.getElementById('btn-pick-text').innerText = 'PICK FROM MAP';
+    document.getElementById('btn-pick-text').innerText = t('pick_from_map');
     map.off('click', onMapPickClick);
 }
 async function onMapPickClick(e) {
@@ -157,20 +170,21 @@ async function onMapPickClick(e) {
     }).addTo(map);
 
     const pickInfo = document.getElementById('pick-info');
-    pickInfo.innerHTML = '<span class="parcel-loading">Looking up parcel...</span>';
+    pickInfo.innerHTML = '<span class="parcel-loading">' + (currentLang() === 'pl' ? 'Wyszukiwanie działki...' : 'Looking up parcel...') + '</span>';
     pickInfo.style.display = 'block';
 
     try {
         const res = await fetch(API_URL + '/api/uldk/locate?lat=' + lat + '&lng=' + lng);
-        if (res.status === 404) { throw new Error('No cadastral parcel found at this location. This service covers Poland only.'); }
+        if (res.status === 404) { throw new Error(currentLang() === 'pl' ? 'W tym miejscu nie znaleziono działki ewidencyjnej. Usługa obejmuje tylko Polskę.' : 'No cadastral parcel found at this location. This service covers Poland only.'); }
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || 'ULDK lookup failed (' + res.status + ')');
         }
         const data = await res.json();
-        if (data.count === 0 || !data.results.length) throw new Error('No parcel found at this location.');
+        if (data.count === 0 || !data.results.length) throw new Error(currentLang() === 'pl' ? 'W tym miejscu nie znaleziono działki.' : 'No parcel found at this location.');
         const first = data.results[0];
         setAOI(first.geojson, first);
+        lastPickPanelData = { parcel: Object.assign({}, first), count: 1 };
         pickInfo.innerHTML = buildParcelInfoHTML(first, 1);
     } catch(e) {
         pickInfo.innerHTML = '<span class="parcel-error">' + e.message + '</span>';
@@ -183,13 +197,13 @@ async function onMapPickClick(e) {
 // =========================================================================
 function applyGeoJSON() {
     const raw = document.getElementById('geojson_input').value.trim();
-    if (!raw) { showToast('Paste GeoJSON coordinates first.', 'warning'); return; }
+    if (!raw) { showToast(t('toast_geojson_paste'), 'warning'); return; }
     try {
         const coords = JSON.parse(raw);
         const geojson = { type: "Polygon", coordinates: coords };
         setAOI(geojson, null);
     } catch(e) {
-        showToast('Invalid GeoJSON. Expected a coordinates array like [[[lon,lat], ...]].', 'error');
+        showToast(t('toast_geojson_invalid'), 'error');
     }
 }
 
@@ -198,12 +212,12 @@ function applyGeoJSON() {
 // =========================================================================
 function buildParcelInfoHTML(parcel, totalCount) {
     let html = '<div class="parcel-meta">';
-    html += '<div class="parcel-id-row"><span class="parcel-id-label">Parcel ID</span><span class="parcel-id-value">' + (parcel.parcel_id || '—') + '</span></div>';
-    if (parcel.region)      html += '<div class="parcel-detail"><span>Region:</span><span>' + parcel.region + '</span></div>';
-    if (parcel.commune)     html += '<div class="parcel-detail"><span>Commune:</span><span>' + parcel.commune + '</span></div>';
-    if (parcel.county)      html += '<div class="parcel-detail"><span>County:</span><span>' + parcel.county + '</span></div>';
-    if (parcel.voivodeship) html += '<div class="parcel-detail"><span>Voivodeship:</span><span>' + parcel.voivodeship + '</span></div>';
-    if (totalCount > 1)     html += '<div class="parcel-note">Showing first of ' + totalCount + ' results</div>';
+    html += '<div class="parcel-id-row"><span class="parcel-id-label">' + (currentLang() === 'pl' ? 'Id działki' : 'Parcel ID') + '</span><span class="parcel-id-value">' + (parcel.parcel_id || '—') + '</span></div>';
+    if (parcel.region)      html += '<div class="parcel-detail"><span>' + (currentLang() === 'pl' ? 'Region:' : 'Region:') + '</span><span>' + parcel.region + '</span></div>';
+    if (parcel.commune)     html += '<div class="parcel-detail"><span>' + (currentLang() === 'pl' ? 'Gmina:' : 'Commune:') + '</span><span>' + parcel.commune + '</span></div>';
+    if (parcel.county)      html += '<div class="parcel-detail"><span>' + (currentLang() === 'pl' ? 'Powiat:' : 'County:') + '</span><span>' + parcel.county + '</span></div>';
+    if (parcel.voivodeship) html += '<div class="parcel-detail"><span>' + (currentLang() === 'pl' ? 'Województwo:' : 'Voivodeship:') + '</span><span>' + parcel.voivodeship + '</span></div>';
+    if (totalCount > 1)     html += '<div class="parcel-note">' + (currentLang() === 'pl' ? ('Pokazano pierwszy z ' + totalCount + ' wyników') : ('Showing first of ' + totalCount + ' results')) + '</div>';
     html += '</div>';
     return html;
 }
@@ -233,46 +247,125 @@ function addOverlayToPanel(layer, idx, date, sensor) {
     opSection.style.display = 'block';
 
     const id = 'ol-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-    const info = INDEX_INFO[idx];
-    const displayName = info ? info.short : idx;
-    const sensorTag = sensor === 'Sentinel-2' ? 'S2' : 'L8/9';
+    const info = (typeof getIndexInfo === 'function') ? getIndexInfo(idx) : INDEX_INFO[idx];
+    const displayName = idx === 'STRESS_HOTSPOTS'
+        ? t('stress_layer_name')
+        : (info ? info.short : idx);
+    const sensorTag = sensor === 'Sentinel-2' ? 'S2' : (sensor === 'Landsat 8/9' ? 'L8/9' : '');
     const sensorCls = sensor === 'Sentinel-2' ? 's2' : 'ls';
+    const showSensorTag = !!sensorTag;
 
     const isRGB = (idx === 'RGB');
     const row = document.createElement('label');
     row.className = 'lp-overlay-row' + (isRGB ? ' lp-rgb-row' : '');
     row.setAttribute('for', id);
+    row.dataset.idx = idx;
+    row.dataset.date = date;
+    row.dataset.rawDate = date;
+    row.dataset.rangeDate = (date && date.indexOf('→') !== -1) ? '1' : '0';
 
-    const label = (isRGB ? 'RGB Scene' : displayName) + ' — ' + formatDate(date);
+    const rgbName = t('rgb_scene');
+    const dateLabel = row.dataset.rangeDate === '1' ? date : formatDate(date);
     row.innerHTML =
         '<input type="checkbox" id="' + id + '" class="lp-overlay-cb" data-layer-id="' + id + '">' +
         '<span class="lp-cb-mark"></span>' +
         '<span class="lp-overlay-info">' +
-        '  <span class="lp-overlay-name">' + (isRGB ? 'RGB Scene' : displayName) + '</span>' +
+        '  <span class="lp-overlay-name">' + (isRGB ? rgbName : displayName) + '</span>' +
         '  <span class="lp-overlay-meta">' +
-        '    <span class="lp-sensor ' + sensorCls + '">' + sensorTag + '</span>' +
-        '    <span class="lp-date">' + formatDate(date) + '</span>' +
+        (showSensorTag ? ('    <span class="lp-sensor ' + sensorCls + '">' + sensorTag + '</span>') : '') +
+        '    <span class="lp-date">' + dateLabel + '</span>' +
         '  </span>' +
         '</span>';
 
     const cb = row.querySelector('input');
     cb.addEventListener('change', function() {
-        if (this.checked) { layer.addTo(map); }
+        if (this.checked) {
+            layer.addTo(map);
+            if (typeof layer.setZIndex === 'function') layer.setZIndex(1000);
+            if (typeof layer.bringToFront === 'function') layer.bringToFront();
+        }
         else              { map.removeLayer(layer); }
     });
 
     container.appendChild(row);
     updateLayerCount();
+    return cb;
+}
+
+function refreshOverlayTranslations() {
+    document.querySelectorAll('.lp-overlay-row').forEach(function(row) {
+        const idx = row.dataset.idx;
+        const date = row.dataset.date;
+        const rawDate = row.dataset.rawDate || date;
+        const isRangeDate = row.dataset.rangeDate === '1';
+        if (!idx || !date) return;
+        const info = (typeof getIndexInfo === 'function') ? getIndexInfo(idx) : INDEX_INFO[idx];
+        const displayName = (idx === 'RGB')
+            ? t('rgb_scene')
+            : (idx === 'STRESS_HOTSPOTS' ? t('stress_layer_name') : (info ? info.short : idx));
+        const nameEl = row.querySelector('.lp-overlay-name');
+        const dateEl = row.querySelector('.lp-date');
+        if (nameEl) nameEl.textContent = displayName;
+        if (dateEl) dateEl.textContent = isRangeDate ? rawDate : formatDate(date);
+    });
+}
+
+function renderAoiStatusHtml(payload) {
+    if (!payload) return '';
+    if (payload.type === 'parcel' && payload.info) {
+        const info = payload.info;
+        let html = '<span class="aoi-ok-icon">&#10003;</span>';
+        html += '<span>' + (currentLang() === 'pl' ? 'Działka' : 'Parcel') + ' <b>' + (info.parcel_id || '—') + '</b>';
+        if (info.region)  html += ' &middot; ' + info.region;
+        if (info.commune) html += ' &middot; ' + info.commune;
+        html += '</span>';
+        return html;
+    }
+    if (payload.type === 'saved') {
+        let html = '<span class="aoi-ok-icon">&#128190;</span>';
+        html += '<span><b>' + payload.name + '</b> ' + (currentLang() === 'pl' ? 'wczytano z zapisanych pól' : 'loaded from saved fields');
+        if (payload.info && payload.info.parcel_id) html += ' &middot; ' + (currentLang() === 'pl' ? 'Działka ' : 'Parcel ') + payload.info.parcel_id;
+        html += '<br><span class="aoi-saved-hint">' + (currentLang() === 'pl' ? 'Przywrócono geometrię AOI — wybierz daty i indeksy, następnie uruchom wyszukiwanie. Możesz też edytować granicę poniżej.' : 'AOI geometry restored — select dates &amp; indices, then search. You can also edit the boundary below.') + '</span>';
+        html += '</span>';
+        return html;
+    }
+    return '<span class="aoi-ok-icon">&#10003;</span><span>' + (currentLang() === 'pl' ? 'Wczytano własny poligon' : 'Custom polygon loaded') + '</span>';
+}
+
+function refreshAoiTranslations() {
+    const statusEl = document.getElementById('aoi-status');
+    if (statusEl && statusEl.style.display !== 'none' && lastAoiStatusData) {
+        statusEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
+    }
+    const parcelInfoEl = document.getElementById('parcel-info');
+    if (parcelInfoEl && parcelInfoEl.style.display !== 'none' && lastParcelPanelData) {
+        parcelInfoEl.innerHTML = buildParcelInfoHTML(lastParcelPanelData.parcel, lastParcelPanelData.count);
+    }
+    const pickInfoEl = document.getElementById('pick-info');
+    if (pickInfoEl && pickInfoEl.style.display !== 'none' && lastPickPanelData && pickInfoEl.innerHTML.indexOf('parcel-meta') !== -1) {
+        pickInfoEl.innerHTML = buildParcelInfoHTML(lastPickPanelData.parcel, lastPickPanelData.count);
+    }
 }
 
 function clearAllOverlays() {
-    activeLayers.forEach(l => map.removeLayer(l));
-    activeLayers = [];
-    document.getElementById('lp-overlays').innerHTML = '';
-    document.getElementById('lp-overlays-section').style.display = 'none';
-    document.getElementById('lp-opacity-section').style.display = 'none';
-    document.getElementById('legend-panel').style.display = 'none';
-    document.getElementById('legend-tabs').innerHTML = '';
+    activeLayers = activeLayers.filter(function(layer) {
+        if (layer && layer._persistentStress) return true;
+        map.removeLayer(layer);
+        return false;
+    });
+
+    const overlaysEl = document.getElementById('lp-overlays');
+    overlaysEl.querySelectorAll('.lp-overlay-row').forEach(function(row) {
+        if (row.dataset.persistentStress !== '1') row.remove();
+    });
+
+    const hasRows = overlaysEl.querySelectorAll('.lp-overlay-row').length > 0;
+    document.getElementById('lp-overlays-section').style.display = hasRows ? 'block' : 'none';
+    document.getElementById('lp-opacity-section').style.display = hasRows ? 'block' : 'none';
+    if (!hasRows) {
+        document.getElementById('legend-panel').style.display = 'none';
+        document.getElementById('legend-tabs').innerHTML = '';
+    }
     updateLayerCount();
 }
 
@@ -286,7 +379,19 @@ function updateLayerCount() {
 function setOverlayOpacity(val) {
     const opacity = val / 100;
     document.getElementById('lp-opacity-val').innerText = val + '%';
-    activeLayers.forEach(l => l.setOpacity(opacity));
+    activeLayers.forEach(function(l) {
+        if (typeof l.setOpacity === 'function') {
+            l.setOpacity(opacity);
+            return;
+        }
+        if (typeof l.setStyleByOpacity === 'function') {
+            l.setStyleByOpacity(opacity);
+            return;
+        }
+        if (typeof l.setStyle === 'function') {
+            l.setStyle({ opacity: Math.max(0.35, opacity), fillOpacity: Math.max(0, Math.min(0.85, opacity * 0.55)) });
+        }
+    });
 }
 
 // =========================================================================
@@ -295,6 +400,7 @@ function setOverlayOpacity(val) {
 function setStatus(msg, type) {
     const el = document.getElementById('status');
     const txt = document.getElementById('status-text');
+    if (!el || !txt) return;
     txt.innerText = msg;
     el.className = '';
     if (type) el.classList.add('status-' + type);
@@ -303,6 +409,7 @@ function setStatus(msg, type) {
 function setProgress(pct) {
     const bar = document.getElementById('progress-bar');
     const fill = document.getElementById('progress-fill');
+    if (!bar || !fill) return;
     if (pct < 0) { bar.style.display = 'none'; fill.style.width = '0%'; }
     else         { bar.style.display = 'block'; fill.style.width = Math.min(100, Math.max(0, pct)) + '%'; }
 }
@@ -314,20 +421,20 @@ function toggleGroupIndices(group, linkEl) {
     const boxes = document.querySelectorAll('input[name="idx"][data-group="' + group + '"]');
     const allChecked = Array.from(boxes).every(cb => cb.checked);
     boxes.forEach(cb => cb.checked = !allChecked);
-    linkEl.innerText = allChecked ? 'select all' : 'deselect all';
+    linkEl.innerText = allChecked ? t('select_all') : t('deselect_all');
 }
 function toggleSensorDates(sensor, linkEl) {
     const boxes = document.querySelectorAll('.date-checkbox[data-sensor="' + sensor + '"]');
     const allChecked = Array.from(boxes).every(cb => cb.checked);
     boxes.forEach(cb => cb.checked = !allChecked);
-    linkEl.innerText = allChecked ? 'all' : 'none';
+    linkEl.innerText = allChecked ? t('all').toLowerCase() : (currentLang() === 'pl' ? 'brak' : 'none');
 }
 
 // =========================================================================
 //  ZOOM TO AOI
 // =========================================================================
 function zoomToAOI() {
-    if (!currentAOI) { showToast('Please select an area of interest first.', 'warning'); return; }
+    if (!currentAOI) { showToast(t('toast_select_aoi'), 'warning'); return; }
     if (aoiLayer) { map.fitBounds(aoiLayer.getBounds(), { padding: [50, 50], animate: true }); }
 }
 
@@ -335,17 +442,73 @@ function zoomToAOI() {
 //  LEGEND
 // =========================================================================
 function updateLegend(idx) {
-    const info = INDEX_INFO[idx];
+    if (idx === 'RGB') {
+        currentLegendIdx = null;
+        document.getElementById('legend-panel').style.display = 'none';
+        return;
+    }
+    const info = (typeof getIndexInfo === 'function') ? getIndexInfo(idx) : INDEX_INFO[idx];
     if (!info) return;
+    currentLegendIdx = idx;
+    const labelsEl = document.querySelector('.leg-labels');
+    const stepsEl = document.getElementById('leg-steps');
     document.getElementById('legend-panel').style.display = 'block';
     document.getElementById('full-name').innerText = info.full;
     document.getElementById('leg-formula').innerText = info.formula;
-    document.getElementById('leg-desc').innerText = info.desc;
+    let descText = info.desc;
+    if (idx === 'STRESS_HOTSPOTS') {
+        if (currentLang() === 'pl') {
+            descText += ' (0.0-0.2: Zdrowe, 0.2-0.4: W większości zdrowe, 0.4-0.6: Do obserwacji, 0.6-0.8: W stresie, 0.8-1.0: Krytyczne)';
+        } else {
+            descText += ' (0.0-0.2: Healthy, 0.2-0.4: Mostly healthy, 0.4-0.6: Watch, 0.6-0.8: Stressed, 0.8-1.0: Critical)';
+        }
+    } else if (idx === 'FIELD_CONDITION_MAP') {
+        if (currentLang() === 'pl') {
+            descText += ' (0.0-3.0: Krytyczne, 3.0-5.0: W stresie, 5.0-7.0: Do obserwacji, 7.0-8.5: W większości zdrowe, 8.5-10.0: Zdrowe)';
+        } else {
+            descText += ' (0.0-3.0: Critical, 3.0-5.0: Stressed, 5.0-7.0: Watch, 7.0-8.5: Mostly healthy, 8.5-10.0: Healthy)';
+        }
+    }
+    document.getElementById('leg-desc').innerText = descText;
     document.getElementById('leg-gradient').style.background = info.gradient;
-    document.getElementById('leg-min').innerText = info.range[0];
-    document.getElementById('leg-max').innerText = info.range[1];
+    if ((idx === 'STRESS_HOTSPOTS' || idx === 'FIELD_CONDITION_MAP') && stepsEl) {
+        labelsEl.style.display = 'grid';
+        labelsEl.classList.add('leg-labels-scale');
+        if (idx === 'STRESS_HOTSPOTS') {
+            labelsEl.innerHTML =
+                '<span>0.0</span>' +
+                '<span>0.2</span>' +
+                '<span>0.4</span>' +
+                '<span>0.6</span>' +
+                '<span>0.8</span>' +
+                '<span>1.0</span>';
+        } else {
+            labelsEl.innerHTML =
+                '<span>0.0</span>' +
+                '<span>3.0</span>' +
+                '<span>5.0</span>' +
+                '<span>7.0</span>' +
+                '<span>8.5</span>' +
+                '<span>10.0</span>';
+        }
+
+        stepsEl.style.display = 'none';
+        stepsEl.className = 'leg-steps';
+        stepsEl.innerHTML = '';
+    } else if (stepsEl) {
+        labelsEl.classList.remove('leg-labels-scale');
+        labelsEl.innerHTML = '<span id="leg-min"></span><span id="leg-max"></span>';
+        document.getElementById('leg-min').innerText = info.range[0];
+        document.getElementById('leg-max').innerText = info.range[1];
+        stepsEl.style.display = 'none';
+        stepsEl.className = 'leg-steps';
+        stepsEl.innerHTML = '';
+        labelsEl.style.display = 'flex';
+    }
     document.querySelectorAll('.leg-tab').forEach(t => t.classList.toggle('active', t.dataset.idx === idx));
 }
+
+function getCurrentLegendIndex() { return currentLegendIdx; }
 
 // =========================================================================
 //  SAVED FIELDS / RECENT SEARCHES  (localStorage)
@@ -382,13 +545,13 @@ function toggleSavedFields() {
 function renderSavedFields() {
     const dd = document.getElementById('saved-fields-dropdown');
     const fields = getSavedFields();
-    if (fields.length === 0) { dd.innerHTML = '<div class="saved-empty">No saved fields yet</div>'; return; }
+    if (fields.length === 0) { dd.innerHTML = '<div class="saved-empty">' + (currentLang() === 'pl' ? 'Brak zapisanych pól' : 'No saved fields yet') + '</div>'; return; }
     dd.innerHTML = fields.map((f, i) => {
-        const date = new Date(f.savedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const date = new Date(f.savedAt).toLocaleDateString(currentLang() === 'pl' ? 'pl-PL' : 'en-GB', { day: 'numeric', month: 'short' });
         return '<div class="saved-field-item" onclick="loadSavedField(' + i + ')">'
              + '  <div><span class="saved-field-name">' + f.name + '</span>'
              + '  <span class="saved-field-date">' + date + '</span></div>'
-             + '  <button type="button" class="saved-field-remove" onclick="event.stopPropagation(); removeSavedField(' + i + ')" title="Remove">&times;</button>'
+             + '  <button type="button" class="saved-field-remove" onclick="event.stopPropagation(); removeSavedField(' + i + ')" title="' + (currentLang() === 'pl' ? 'Usuń' : 'Remove') + '">&times;</button>'
              + '</div>';
     }).join('');
 }
@@ -402,11 +565,11 @@ function loadSavedField(index) {
 
     // Show saved-field confirmation banner
     const statusEl = document.getElementById('aoi-status');
-    let html = '<span class="aoi-ok-icon">&#128190;</span>';
-    html += '<span><b>' + f.name + '</b> loaded from saved fields';
-    if (f.info && f.info.parcel_id) html += ' &middot; Parcel ' + f.info.parcel_id;
-    html += '<br><span class="aoi-saved-hint">AOI geometry restored — select dates &amp; indices, then search. You can also edit the boundary below.</span>';
-    html += '</span>';
-    statusEl.innerHTML = html;
+    lastAoiStatusData = { type: 'saved', name: f.name, info: f.info || null };
+    statusEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
     statusEl.style.display = 'flex';
-}
+}
+
+window.refreshOverlayTranslations = refreshOverlayTranslations;
+window.refreshAoiTranslations = refreshAoiTranslations;
+window.getCurrentLegendIndex = getCurrentLegendIndex;

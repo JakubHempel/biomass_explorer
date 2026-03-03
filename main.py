@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.encoders import jsonable_encoder
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 import os
+import logging
 
 import services
 import schemas
@@ -15,8 +17,13 @@ import uldk
 import auth
 import admin_service
 
-# 1. Creating tables in the database (SQLite)
-models.Base.metadata.create_all(bind=database.engine)
+log = logging.getLogger(__name__)
+
+# 1. Creating table in the database (optional in serverless mode)
+if database.DATABASE_ENABLED and database.engine is not None:
+    models.Base.metadata.create_all(bind=database.engine)
+    database.ensure_measurements_schema()
+    database.migrate_measurements_drop_legacy_date()
 
 
 @asynccontextmanager
@@ -25,6 +32,23 @@ async def lifespan(app: FastAPI):
     admin_service.ensure_users_from_owners()
     admin_service.ensure_default_crops()
     services.init_gee()
+    if database.DATABASE_ENABLED:
+        database.check_db_connection()
+        db_kind = "sqlite" if database.SQLALCHEMY_DATABASE_URL.startswith("sqlite") else "remote"
+        log.info(
+            "Database connectivity check passed. backend=%s schema=%s table=%s",
+            db_kind,
+            database._active_schema() or "(default)",
+            database.DB_TABLE_NAME,
+        )
+        print(
+            "DB startup | "
+            f"backend={db_kind} | "
+            f"schema={database._active_schema() or '(default)'} | "
+            f"table={database.DB_TABLE_NAME}"
+        )
+    else:
+        log.warning("Database persistence is disabled (ENABLE_DB=0).")
     yield
 
 
@@ -70,7 +94,8 @@ async def calculate_biomass_endpoint(
 ):
     try:
         result = services.calculate_biomass_logic(request)
-        services.save_results_to_db(db, result)
+        if db is not None:
+            services.save_results_to_db(db, result)
         return result
     except Exception as e:
         print(f"Error: {e}")
@@ -89,8 +114,19 @@ def _measurement_to_dict(r: models.Measurement) -> dict:
 
 @app.get("/history/{field_id}")
 async def get_history(field_id: str, db: Session = Depends(database.get_db)):
-    records = db.query(models.Measurement).filter(models.Measurement.field_id == field_id).all()
-    return [_measurement_to_dict(r) for r in records]
+    if db is None:
+        return []
+    try:
+        field_id_num = int(field_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="field_id must be numeric.")
+    records = db.query(models.Measurement).filter(models.Measurement.field_id == field_id_num).all()
+    payload = []
+    for record in records:
+        item = {k: v for k, v in record.__dict__.items() if not k.startswith("_")}
+        item["date"] = record.captured_at
+        payload.append(item)
+    return jsonable_encoder(payload)
 
 @app.post("/visualize/map", response_model=schemas.MapResponse)
 async def get_map_layer(request: schemas.AnalysisRequest):
@@ -136,6 +172,8 @@ async def pixel_value(request: schemas.PixelQueryRequest):
             indices=request.indices,
             geojson=request.geojson,
             cloud_cover=request.cloud_cover,
+            start_date=request.start_date,
+            end_date=request.end_date,
         )
         return result
     except Exception as e:

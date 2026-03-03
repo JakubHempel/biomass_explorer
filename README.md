@@ -154,19 +154,133 @@ After these steps you will have a project ID ready to use.
    GEE_PROJECT_ID='your-google-cloud-project-id'
    ```
 
+   Optional (for serverless deployments before setting up Azure/Postgres):
+   ```text
+   ENABLE_DB='0'
+   ```
+   This disables database writes and `/history` persistence.
+
+   For **Azure Database for PostgreSQL** (recommended for production), set:
+   ```text
+   ENABLE_DB='1'
+   DATABASE_URL='postgresql+psycopg://<username>:<password>@<host>:5432/<database>?sslmode=require'
+   DB_SCHEMA='obs'
+   DB_TABLE_NAME='vegetation_indices'
+   ```
+   Notes:
+   - `sslmode=require` enforces encrypted transport (TLS).
+   - On Azure, the username is often `username@servername`.
+   - URL-encode special password characters (`@`, `:`, `/`, `#`, `%`, `?`).
+   - If your target table is in a non-default schema, set `DB_SCHEMA` accordingly.
+
 3. **Install dependencies:**
    ```bash
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
    ```
 
 4. **Start the server:**
    ```bash
-   uvicorn main:app --reload
+   python -m uvicorn main:app --reload
    ```
 
 5. **Authenticate with GEE** — on first run the console will print a URL. Open it, log in with the same Google account that owns the Cloud project, and authorise. A token is cached locally for future sessions.
 
 6. **Open the app** at [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+---
+
+## Azure PostgreSQL (Safe Setup)
+
+Use this checklist when moving persistence from local SQLite to Azure PostgreSQL:
+
+1. Create an Azure Database for PostgreSQL instance.
+2. Add your client/app IP in the server firewall (avoid `0.0.0.0/0` for production).
+3. Create a dedicated application user with least privilege.
+4. Set `DATABASE_URL` with `postgresql+psycopg://...` and `sslmode=require`.
+   - If your table is in `obs` schema, also set:
+     - `DB_SCHEMA='obs'`
+     - `DB_TABLE_NAME='vegetation_indices'`
+5. Install dependencies and run:
+   ```bash
+   python -m pip install -r requirements.txt
+   python -m uvicorn main:app --reload
+   ```
+6. Trigger one analysis and verify `/history/{field_id}` returns data.
+7. Verify direct table writes in PgAdmin:
+   ```sql
+   SELECT COUNT(*) FROM obs.vegetation_indices;
+   SELECT * FROM obs.vegetation_indices ORDER BY id DESC LIMIT 20;
+   ```
+
+### Troubleshooting
+
+- **`password authentication failed`**:
+  - Verify username format (`username@servername` is common on Azure).
+  - Confirm password is correct and URL-encoded in `DATABASE_URL`.
+- **`could not connect` / timeout**:
+  - Check firewall rules and server hostname.
+  - Confirm port `5432` is reachable.
+- **`SSL is required`**:
+  - Ensure `sslmode=require` is present in `DATABASE_URL`.
+- **Still writing to local SQLite**:
+  - Confirm `ENABLE_DB='1'`.
+  - Confirm `DATABASE_URL` is set and app restarted.
+- **Rows not visible in expected schema/table**:
+  - Confirm `DB_SCHEMA` and `DB_TABLE_NAME` values in `.env`.
+  - Verify startup log prints the expected schema/table target.
+
+---
+
+## Field Condition Score & Stress Layer
+
+The app shows two related outputs:
+
+- **Field Condition Score (0–10)** — a single field-level score.
+- **Stress Hotspots map (`STRESS_HOTSPOTS`)** — per-pixel stress intensity over the AOI.
+
+Both are now tied to the same stress signal for consistency:
+
+1. Build hotspot stress image using 5 core indicators:
+   - `VHI`, `TCI`, `NDVI`, `NDMI`, `TVDI`
+2. Compute field mean stress over AOI:
+   - `mean_stress` in range `0..1` (`0` healthy, `1` critical)
+3. Convert to field score:
+   - `score_0_10 = 10 * (1 - mean_stress)`
+
+### Stress Layer Legend
+
+- `0.0–0.2`: Healthy
+- `0.2–0.4`: Mostly healthy
+- `0.4–0.6`: Watch
+- `0.6–0.8`: Stressed
+- `0.8–1.0`: Critical
+
+### Expert Mode Behavior
+
+- Only indices selected by the user in expert mode are used for:
+  - persisted timeseries values
+  - available observation layers
+- Core stress indices used for field-condition scoring are internal-only and are not auto-added to expert selections.
+
+---
+
+## Vercel Deployment Notes
+
+Vercel cannot run interactive Google Earth Engine authentication (`ee.Authenticate()`), so you must provide
+service-account credentials via environment variables.
+
+Set these in **Vercel Project → Settings → Environment Variables**:
+
+- `GEE_PROJECT_ID` = your Google Cloud project id
+- `GEE_SERVICE_ACCOUNT_JSON` = full JSON key content for a service account with Earth Engine access
+- `ENABLE_DB` = `0` (if you want no persistence for now)
+
+Important:
+- The `GEE_SERVICE_ACCOUNT_JSON` value must be valid JSON (single-line is fine).
+- Paste the JSON object directly (no extra outer `'...'` or `"..."` wrapping).
+- It must be a **service account** key (`"type": "service_account"`), not a user OAuth token.
+- If your key has escaped newlines in `private_key`, keep them as `\n` in the JSON value.
+- The service account must be granted access to Earth Engine in your GCP/GEE setup.
 
 ---
 
@@ -200,18 +314,28 @@ After these steps you will have a project ID ready to use.
 
 ## Database Schema
 
-The `measurements` table stores one row per **(field, date, sensor)** combination:
+By default, persistence targets `obs.vegetation_indices` (configurable with `DB_SCHEMA` and `DB_TABLE_NAME`).
+
+The table stores one row per **(field, captured_at, sensor)** combination:
 
 | Column | Type | Notes |
 |:-------|:-----|:------|
 | `id` | Integer | Primary key |
-| `field_id` | String | User-defined field name |
-| `date` | Date | Observation date |
+| `field_id` | Integer/BigInt | Numeric field identifier |
+| `captured_at` | Date | Observation date |
 | `sensor` | String | `"Sentinel-2"` or `"Landsat 8/9"` |
+| `source` | String | Data source label (e.g. `"GEE"`) |
+| `source_image_id` | String | Source image identifier (default `"1"`) |
+| `canopy_cover` | Float | Optional metadata (default `1.0`) |
+| `biomass_est` | Float | Optional metadata (default `1.0`) |
 | `ndvi` … `nmdi` | Float | Sentinel-2 index values (nullable) |
 | `lst` … `vhi` | Float | Landsat index values (nullable) |
 
-Unique constraint: `(field_id, date, sensor)`.
+Unique constraint should include sensor:
+
+- `(field_id, captured_at, sensor)`
+
+If your database currently has unique index `(field_id, captured_at)` only, inserts can fail when both Sentinel-2 and Landsat exist on the same date.
 
 > **Note:** After schema changes (e.g. pulling an update that adds columns), delete `biomass_results.db` and restart the server — the table will be recreated automatically.
 

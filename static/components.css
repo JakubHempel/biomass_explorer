@@ -2,7 +2,7 @@
    DATES CONTAINER  +  SENSOR GROUPS
    ========================================================================== */
 #dates-container {
-    max-height: 250px; overflow-y: auto;
+    max-height: 320px; overflow-y: auto;
     border: 1px solid var(--border);
     background: var(--bg-subtle);
     border-radius: var(--radius);
@@ -73,6 +73,190 @@
     font-size: 0.68rem; font-weight: 700; color: var(--text-muted);
     text-transform: uppercase; letter-spacing: 0.06em;
     margin-bottom: 8px;
+}
+
+.field-condition-card {
+    background: linear-gradient(135deg, #ecfeff, #eef2ff);
+    border: 1px solid #c7d2fe;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.field-condition-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.field-condition-title {
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #334155;
+}
+
+.field-condition-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #1e40af;
+    background: #dbeafe;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    padding: 3px 8px;
+}
+
+.field-condition-score-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.field-condition-score {
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: #0f172a;
+    line-height: 1;
+}
+
+.field-condition-scale {
+    font-size: 0.78rem;
+    color: #64748b;
+    font-weight: 700;
+}
+
+.field-condition-score-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.field-score-hover-legend {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 6px);
+    min-width: 145px;
+    background: rgba(15, 23, 42, 0.95);
+    color: #e2e8f0;
+    border-radius: 8px;
+    padding: 7px 8px;
+    font-size: 0.64rem;
+    line-height: 1.4;
+    text-align: left;
+    display: none;
+    z-index: 4;
+}
+
+.field-score-hover-legend::before {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: 14px;
+    border-width: 0 5px 5px 5px;
+    border-style: solid;
+    border-color: transparent transparent rgba(15, 23, 42, 0.95) transparent;
+}
+
+.field-condition-score-wrap:hover .field-score-hover-legend {
+    display: block;
+}
+
+.field-condition-meta {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 0.72rem;
+    color: #334155;
+}
+
+.field-condition-drivers-title {
+    margin-top: 10px;
+    font-size: 0.66rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+}
+
+.fc-drivers {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 0.72rem;
+    color: #334155;
+    line-height: 1.5;
+}
+
+.fc-empty {
+    margin-top: 6px;
+    font-size: 0.72rem;
+    color: #64748b;
+}
+
+.field-condition-summary {
+    margin-top: 8px;
+    padding: 8px 9px;
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    color: #334155;
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+
+.field-condition-conf-note {
+    margin-top: 6px;
+    font-size: 0.68rem;
+    color: #64748b;
+}
+
+.field-condition-trend {
+    margin-top: 6px;
+    font-size: 0.72rem;
+    color: #334155;
+}
+.field-condition-trend.trend-up { color: #15803d; }
+.field-condition-trend.trend-down { color: #b91c1c; }
+.field-condition-trend.trend-flat { color: #92400e; }
+
+.field-condition-hotspot-btn {
+    margin-top: 8px;
+    width: 100%;
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    color: #1e3a8a;
+    border-radius: 8px;
+    padding: 7px 9px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.field-condition-hotspot-btn:hover {
+    background: #dbeafe;
+}
+
+
+.btn-technical-toggle {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin: 0 0 10px;
+    transition: all 0.15s;
+}
+
+.btn-technical-toggle:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
 }
 
 .stats-grid {
@@ -154,6 +338,36 @@
 }
 .info-box .info-icon { flex-shrink: 0; font-size: 0.95rem; line-height: 1.3; }
 
+.auto-indices-note {
+    font-size: 0.75rem;
+    color: #334155;
+    line-height: 1.55;
+    background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+    border: 1px solid #dbeafe;
+    border-left: 4px solid #60a5fa;
+    border-radius: 8px;
+    padding: 9px 10px;
+    margin-bottom: 10px;
+}
+
+.advanced-indices summary {
+    cursor: pointer;
+    font-size: 0.73rem;
+    font-weight: 700;
+    color: #475569;
+    margin: 4px 0 8px;
+}
+
+#setup-body {
+    display: flex;
+    flex-direction: column;
+}
+
+.section-field-time { order: 1; }
+.section-aoi { order: 2; }
+.section-field-health { order: 3; }
+#setup-body > .btn-primary { order: 99; }
+
 /* ==========================================================================
    LEGEND PANEL  (floating on map)
    ========================================================================== */
@@ -207,6 +421,64 @@
     margin-top: 6px; font-size: 0.8rem; font-weight: 700;
     color: #475569;
     font-family: 'JetBrains Mono', monospace;
+}
+
+.leg-labels.leg-labels-scale {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0;
+    margin-top: 6px;
+    font-size: 0.62rem;
+    font-weight: 700;
+}
+.leg-labels.leg-labels-scale span {
+    text-align: center;
+}
+.leg-labels.leg-labels-scale span:first-child { text-align: left; }
+.leg-labels.leg-labels-scale span:last-child { text-align: right; }
+
+.leg-steps {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 0.64rem;
+    color: #334155;
+    font-family: 'Inter', sans-serif;
+}
+
+.leg-steps span {
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.leg-step-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 7px;
+    border-radius: 999px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #334155;
+}
+
+.leg-steps-bands {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.leg-band-label {
+    display: block;
+    text-align: center;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #334155;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    line-height: 1.15;
 }
 
 /* ==========================================================================
