@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="pl" data-i18n-title="fields_page_title">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pola uprawne – Biomass Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="/static/i18n.js"></script>
+<style>
+:root{
+  --primary:#2563eb;--primary-light:#eff6ff;--primary-border:#bfdbfe;
+  --success:#16a34a;--success-light:#f0fdf4;
+  --warn:#d97706;--warn-light:#fffbeb;
+  --danger:#dc2626;--danger-light:#fef2f2;
+  --bg:#f0f4f8;--surface:#fff;--surface2:#f8fafc;
+  --text:#1e293b;--text-muted:#64748b;--text-xs:#94a3b8;
+  --border:#e2e8f0;--border-input:#cbd5e1;
+  --radius:10px;--radius-lg:14px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.08);
+  --shadow-md:0 4px 16px rgba(0,0,0,.10);
+  --topbar:52px;--panel:380px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;font-size:14px;color:var(--text);background:var(--bg);height:100vh;overflow:hidden}
+
+/* ── Topbar ── */
+.topbar{height:var(--topbar);background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 18px;gap:12px;z-index:300;position:relative}
+.tb-back{display:flex;align-items:center;gap:5px;color:var(--text-muted);text-decoration:none;
+  font-size:13px;font-weight:500;padding:5px 8px;border-radius:6px;transition:background .15s}
+.tb-back:hover{background:var(--bg);color:var(--text)}
+.tb-title{font-size:15px;font-weight:700;color:var(--text)}
+.tb-sep{color:var(--border-input)}
+.tb-spacer{flex:1}
+.tb-user{font-size:13px;color:var(--text-muted);font-weight:500}
+.tb-role{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--primary-light);color:var(--primary)}
+.tb-logout{padding:5px 12px;border-radius:7px;border:1px solid var(--border-input);
+  background:none;color:var(--text-muted);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s}
+.tb-logout:hover{background:var(--danger-light);border-color:var(--danger);color:var(--danger)}
+/* lang switcher */
+.lang-switch{display:flex;gap:3px;align-items:center}
+.lang-btn{padding:3px 5px;border-radius:6px;border:1.5px solid transparent;cursor:pointer;font-size:15px;background:none;line-height:1;transition:all .12s;opacity:.55}
+.lang-btn:hover{opacity:1;background:var(--bg)}
+.lang-btn.active{opacity:1;border-color:var(--primary);background:var(--primary-light)}
+
+/* ── Layout ── */
+.layout{display:flex;height:calc(100vh - var(--topbar));overflow:hidden}
+
+/* ── Panel ── */
+.panel{
+  width:var(--panel);min-width:var(--panel);
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  height:calc(100vh - var(--topbar));
+  overflow:hidden;z-index:200;
+}
+.panel-head{flex-shrink:0;padding:14px 16px 0}
+.panel-scroll{flex:1;height:0;overflow-y:scroll;scrollbar-width:thin;scrollbar-color:var(--border-input) transparent}
+.panel-scroll::-webkit-scrollbar{width:5px}
+.panel-scroll::-webkit-scrollbar-thumb{background:var(--border-input);border-radius:10px}
+
+/* Stats bar */
+.stats-bar{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:0 16px 12px}
+.stat{flex:1;text-align:center;padding:8px 4px;border-right:1px solid var(--border)}
+.stat:last-child{border-right:none}
+.stat-val{font-size:17px;font-weight:700;color:var(--primary)}
+.stat-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:1px}
+
+/* Filters */
+.filters{padding:0 16px 10px;display:flex;flex-direction:column;gap:8px}
+.filter-row{display:flex;gap:6px}
+.search-wrap{position:relative;flex:1}
+.search-wrap svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text-muted);pointer-events:none}
+.search-wrap input{width:100%;padding:7px 8px 7px 30px;border:1px solid var(--border-input);border-radius:8px;
+  font-size:13px;background:var(--surface);outline:none;transition:border .15s}
+.search-wrap input:focus{border-color:var(--primary)}
+select.filter-sel{flex:1;padding:7px 8px;border:1px solid var(--border-input);border-radius:8px;
+  font-size:13px;background:var(--surface);outline:none;cursor:pointer}
+select.filter-sel:focus{border-color:var(--primary)}
+
+.divider{height:1px;background:var(--border);margin:0 0 10px}
+.list-label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+  letter-spacing:.6px;padding:0 16px 6px}
+
+/* Field list items */
+.field-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;
+  border-bottom:1px solid var(--border);transition:background .12s;position:relative}
+.field-item:hover{background:var(--surface2)}
+.field-item.active{background:var(--primary-light)}
+.field-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;margin-top:1px}
+.field-info{flex:1;min-width:0}
+.field-name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.field-sub{font-size:11.5px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.field-area{font-size:11.5px;font-weight:600;color:var(--text-muted);white-space:nowrap;flex-shrink:0}
+.field-item-empty{padding:24px 16px;text-align:center;color:var(--text-muted);font-size:13px}
+
+/* ── Detail view ── */
+#view-detail{display:none;flex-direction:column;height:100%}
+.detail-head{flex-shrink:0;padding:12px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px}
+.detail-back{display:flex;align-items:center;gap:4px;padding:5px 8px;border-radius:7px;
+  border:1px solid var(--border);background:none;cursor:pointer;font-size:12px;color:var(--text-muted);
+  font-weight:500;transition:all .15s}
+.detail-back:hover{background:var(--bg);color:var(--text)}
+.detail-title{font-size:15px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.detail-scroll{flex:1;height:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;
+  scrollbar-width:thin;scrollbar-color:var(--border-input) transparent}
+.detail-section{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.detail-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;
+  color:var(--text-muted);margin-bottom:8px}
+.detail-owner{display:flex;align-items:center;gap:10px}
+.owner-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.owner-name{font-weight:600;font-size:13.5px}
+.owner-email{font-size:11.5px;color:var(--text-muted);margin-top:2px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.detail-kv{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+.detail-kv-label{font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.detail-kv-val{font-size:13.5px;font-weight:600;margin-top:3px;color:var(--text)}
+.crop-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;
+  font-size:12px;font-weight:600;background:#fef9c3;color:#854d0e;border:1px solid #fde68a}
+.detail-actions{display:flex;gap:8px;padding:0 0 4px}
+.btn{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:5px;transition:all .15s;border:none}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:#1d4ed8}
+.btn-ghost{background:none;border:1px solid var(--border-input);color:var(--text-muted)}
+.btn-ghost:hover{background:var(--bg);color:var(--text)}
+.btn-full{width:100%;justify-content:center}
+
+/* ── Map ── */
+.map-wrap{flex:1;position:relative}
+#map{width:100%;height:100%}
+
+/* ── Legend ── */
+.legend{position:absolute;bottom:24px;right:14px;z-index:400;
+  background:rgba(255,255,255,.95);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 14px;box-shadow:var(--shadow-md);min-width:140px;max-width:220px}
+.legend-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--text-muted);margin-bottom:7px}
+.legend-item{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:12px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+
+/* ── Loading ── */
+.loading-overlay{position:absolute;inset:0;background:rgba(255,255,255,.7);
+  display:flex;align-items:center;justify-content:center;z-index:500;gap:10px;font-weight:600}
+.spinner{width:20px;height:20px;border:2.5px solid var(--border);border-top-color:var(--primary);
+  border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:var(--text);color:#fff;padding:10px 18px;border-radius:10px;
+  font-size:13px;font-weight:500;opacity:0;transition:all .3s;z-index:9999;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.error{background:var(--danger)}
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<header class="topbar">
+  <a class="tb-back" href="/admin">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    <span data-i18n="back">Admin</span>
+  </a>
+  <span class="tb-sep">|</span>
+  <span class="tb-title">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+    <span data-i18n="fields_tb_title">Pola uprawne</span>
+  </span>
+  <div class="tb-spacer"></div>
+  <div class="lang-switch">
+    <button class="lang-btn" data-lang="pl" onclick="applyLang('pl')" data-i18n-title="lang_pl_title" title="Zmień na polski">🇵🇱</button>
+    <button class="lang-btn" data-lang="en" onclick="applyLang('en')" data-i18n-title="lang_en_title" title="Switch to English">🇬🇧</button>
+  </div>
+  <span class="tb-user" id="tb-user">–</span>
+  <span class="tb-role" id="tb-role" style="display:none"></span>
+  <button class="tb-logout" onclick="logout()" data-i18n="logout">Wyloguj</button>
+</header>
+
+<div class="layout">
+  <!-- ── Panel ── -->
+  <aside class="panel">
+
+    <!-- LIST VIEW -->
+    <div id="view-list" style="display:flex;flex-direction:column;height:100%">
+      <div class="panel-head">
+        <!-- Stats -->
+        <div class="stats-bar" id="stats-bar">
+          <div class="stat"><div class="stat-val" id="stat-fields">–</div><div class="stat-lbl" data-i18n="stat_fields">Pola</div></div>
+          <div class="stat"><div class="stat-val" id="stat-area">–</div><div class="stat-lbl" data-i18n="stat_area">Łącznie ha</div></div>
+          <div class="stat"><div class="stat-val" id="stat-owners">–</div><div class="stat-lbl" data-i18n="stat_owners">Właściciele</div></div>
+        </div>
+        <!-- Filters -->
+        <div class="filters">
+          <div class="search-wrap">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="q-search" type="text" data-i18n-ph="ph_search_field" placeholder="Szukaj pola…" oninput="applyFilters()">
+          </div>
+          <div class="filter-row">
+            <select class="filter-sel" id="q-owner" onchange="applyFilters()">
+              <option value="" data-i18n="all_owners">— Wszyscy właściciele —</option>
+            </select>
+            <select class="filter-sel" id="q-crop" onchange="applyFilters()">
+              <option value="" data-i18n="all_crops">— Wszystkie uprawy —</option>
+            </select>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="list-label" id="list-label"><span id="list-count">0</span> <span data-i18n="stat_fields">pól</span></div>
+      </div>
+      <div class="panel-scroll" id="field-list"></div>
+    </div>
+
+    <!-- DETAIL VIEW -->
+    <div id="view-detail">
+      <div class="detail-head">
+        <button class="detail-back" onclick="showList()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <span data-i18n="list_back">Lista</span>
+        </button>
+        <span class="detail-title" id="detail-title">–</span>
+        <a id="detail-edit-btn" href="#" class="btn btn-primary" style="padding:6px 12px;font-size:12px;text-decoration:none">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <span data-i18n="edit">Edytuj</span>
+        </a>
+      </div>
+      <div class="detail-scroll" id="detail-body"></div>
+    </div>
+  </aside>
+
+  <!-- ── Map ── -->
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="legend" id="legend" style="display:none">
+      <div class="legend-title" data-i18n="legend_title">Właściciele</div>
+      <div id="legend-items"></div>
+    </div>
+    <div class="loading-overlay" id="loading">
+      <div class="spinner"></div> <span data-i18n="loading_fields">Ładowanie pól…</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Auth ──────────────────────────────────────────────────────────────────
+const token = localStorage.getItem('bm_token');
+if (!token) { window.location.href = '/login'; }
+const username = localStorage.getItem('bm_username') || '';
+const fullname = localStorage.getItem('bm_fullname') || username;
+const role     = localStorage.getItem('bm_role') || 'user';
+document.getElementById('tb-user').textContent = fullname || username;
+const roleEl = document.getElementById('tb-role');
+if (role === 'admin') { roleEl.textContent = 'admin'; roleEl.style.display = ''; }
+function logout() { ['bm_token','bm_role','bm_username','bm_fullname'].forEach(k => localStorage.removeItem(k)); window.location.href = '/login'; }
+
+initLang();
+
+// ── Map init ──────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true }).setView([52.0, 19.5], 7);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles © Esri', maxZoom: 20
+}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+  attribution: '© CartoDB', maxZoom: 20, opacity: 0.8
+}).addTo(map);
+
+// ── Color palette ─────────────────────────────────────────────────────────
+const PALETTE = [
+  '#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6',
+  '#06b6d4','#ec4899','#84cc16','#f97316','#64748b',
+  '#14b8a6','#a855f7','#f43f5e','#eab308','#0ea5e9',
+];
+const ownerColorMap = {}; // owner_id → color hex
+let ownerColorIdx = 0;
+function ownerColor(oid) {
+  if (oid == null) return '#94a3b8';
+  if (!ownerColorMap[oid]) ownerColorMap[oid] = PALETTE[ownerColorIdx++ % PALETTE.length];
+  return ownerColorMap[oid];
+}
+function ownerInitials(name) {
+  if (!name) return '?';
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+// ── State ─────────────────────────────────────────────────────────────────
+let allFields = [];
+let filteredFields = [];
+let layerMap = {};       // field_id → Leaflet layer
+let activeId = null;
+let ownersList = [];
+
+// ── API helpers ───────────────────────────────────────────────────────────
+const hdrs = () => ({ 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' });
+
+function escHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast show' + (type ? ' ' + type : '');
+  setTimeout(() => el.className = 'toast', 3000);
+}
+
+// ── Load data ─────────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const [fieldsRes, ownersRes] = await Promise.all([
+      fetch('/api/fields/browse', { headers: hdrs() }),
+      fetch('/api/owners',        { headers: hdrs() }),
+    ]);
+    if (!fieldsRes.ok) throw new Error(await fieldsRes.text());
+    allFields   = await fieldsRes.json();
+    ownersList  = ownersRes.ok ? await ownersRes.json() : [];
+
+    buildOwnerColors();
+    populateFilters();
+    renderMapLayers();
+    updateStats(allFields);
+    applyFilters();
+    buildLegend();
+  } catch (e) {
+    toast(t('err_loading') + e.message, 'error');
+    console.error(e);
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+  }
+}
+
+function buildOwnerColors() {
+  // Assign colors in consistent order (sorted by owner name)
+  const sorted = [...ownersList].sort((a,b) => (a.name||'').localeCompare(b.name,'pl'));
+  sorted.forEach(o => ownerColor(o.id));
+  // Also assign for any owner_id found in fields but not in ownersList
+  allFields.forEach(f => { if (f.owner_id) ownerColor(f.owner_id); });
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────
+function populateFilters() {
+  const ownerSel = document.getElementById('q-owner');
+  const cropSel  = document.getElementById('q-crop');
+
+  const owners = ownersList.length
+    ? ownersList
+    : [...new Map(allFields.filter(f=>f.owner_id).map(f=>[f.owner_id,{id:f.owner_id,name:f.owner_name}])).values()];
+  owners.forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o.id; opt.textContent = o.name || o.email || `#${o.id}`;
+    ownerSel.appendChild(opt);
+  });
+
+  const crops = [...new Set(allFields.map(f=>f.crop).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pl'));
+  crops.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = c; cropSel.appendChild(opt);
+  });
+}
+
+function applyFilters() {
+  const q      = document.getElementById('q-search').value.trim().toLowerCase();
+  const ownId  = document.getElementById('q-owner').value;
+  const cropQ  = document.getElementById('q-crop').value;
+
+  filteredFields = allFields.filter(f => {
+    if (q && !(f.name||'').toLowerCase().includes(q) && !(f.owner_name||'').toLowerCase().includes(q)) return false;
+    if (ownId && String(f.owner_id) !== String(ownId)) return false;
+    if (cropQ && f.crop !== cropQ) return false;
+    return true;
+  });
+
+  renderList(filteredFields);
+  updateMapVisibility(filteredFields);
+  document.getElementById('list-count').textContent = filteredFields.length;
+}
+
+// ── Map layers ────────────────────────────────────────────────────────────
+const polyGroup = L.featureGroup().addTo(map);
+const pinGroup  = L.featureGroup().addTo(map);
+
+function renderMapLayers() {
+  polyGroup.clearLayers(); pinGroup.clearLayers(); layerMap = {};
+
+  allFields.forEach(f => {
+    const color = ownerColor(f.owner_id);
+    let layer;
+
+    if (f.geojson) {
+      layer = L.geoJSON(f.geojson, {
+        style: { fillColor: color, fillOpacity: 0.35, color, weight: 2, opacity: 0.85 }
+      });
+      layer.on('mouseover', () => { if (activeId !== f.id) layer.setStyle({ fillOpacity: 0.55, weight: 3 }); });
+      layer.on('mouseout',  () => { if (activeId !== f.id) layer.setStyle({ fillOpacity: 0.35, weight: 2 }); });
+    } else if (f.lat && f.lng) {
+      layer = L.circleMarker([f.lat, f.lng], {
+        radius: 7, fillColor: color, fillOpacity: 0.85, color: '#fff', weight: 2
+      });
+    } else { return; }
+
+    layer.on('click', () => selectField(f.id));
+    layer.bindTooltip(`<b>${f.name}</b><br>${f.owner_name||'–'} · ${f.crop||'–'}`, { sticky: true });
+    layerMap[f.id] = layer;
+    if (f.geojson) polyGroup.addLayer(layer);
+    else           pinGroup.addLayer(layer);
+  });
+
+  if (polyGroup.getLayers().length > 0) map.fitBounds(polyGroup.getBounds(), { padding: [20, 20] });
+  else if (pinGroup.getLayers().length > 0) map.fitBounds(pinGroup.getBounds(), { padding: [20, 20] });
+}
+
+function updateMapVisibility(visible) {
+  const visIds = new Set(visible.map(f => f.id));
+  Object.entries(layerMap).forEach(([id, layer]) => {
+    const show = visIds.has(Number(id));
+    if (show && !polyGroup.hasLayer(layer) && !pinGroup.hasLayer(layer)) {
+      layer._featureGroup === pinGroup ? pinGroup.addLayer(layer) : polyGroup.addLayer(layer);
+    } else if (!show) {
+      polyGroup.removeLayer(layer); pinGroup.removeLayer(layer);
+    }
+  });
+}
+
+function highlightLayer(id, on) {
+  const layer = layerMap[id];
+  if (!layer) return;
+  if (layer.setStyle) {
+    layer.setStyle(on
+      ? { fillOpacity: 0.65, weight: 3, color: '#fff' }
+      : { fillOpacity: 0.35, weight: 2, color: ownerColor(allFields.find(f=>f.id===id)?.owner_id) }
+    );
+  }
+}
+
+function zoomToField(f) {
+  const layer = layerMap[f.id];
+  if (!layer) return;
+  if (layer.getBounds) map.fitBounds(layer.getBounds(), { padding: [40, 40], maxZoom: 16 });
+  else map.setView([f.lat, f.lng], 15);
+}
+
+// ── Field list ────────────────────────────────────────────────────────────
+function renderList(fields) {
+  const el = document.getElementById('field-list');
+  if (!fields.length) {
+    el.innerHTML = `<div class="field-item-empty">${t('no_results')}</div>`;
+    return;
+  }
+  el.innerHTML = fields.map(f => {
+    const color = ownerColor(f.owner_id);
+    const area  = f.area_ha ? `${f.area_ha.toFixed(2)} ha` : '';
+    const sub   = [f.owner_name, f.crop].filter(Boolean).join(' · ');
+    return `<div class="field-item${f.id===activeId?' active':''}" onclick="selectField(${f.id})" id="li-${f.id}">
+      <div class="field-dot" style="background:${color}"></div>
+      <div class="field-info">
+        <div class="field-name">${escHtml(f.name)}</div>
+        <div class="field-sub">${escHtml(sub||'–')}</div>
+      </div>
+      ${area ? `<div class="field-area">${area}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function updateStats(fields) {
+  const totalArea = fields.reduce((s, f) => s + (f.area_ha || 0), 0);
+  const uniqOwners = new Set(fields.map(f => f.owner_id).filter(Boolean)).size;
+  document.getElementById('stat-fields').textContent = fields.length;
+  document.getElementById('stat-area').textContent = totalArea.toFixed(1);
+  document.getElementById('stat-owners').textContent = uniqOwners;
+}
+
+// ── Select / Detail ───────────────────────────────────────────────────────
+function selectField(id) {
+  if (activeId && activeId !== id) highlightLayer(activeId, false);
+  activeId = id;
+  const f = allFields.find(f => f.id === id);
+  if (!f) return;
+
+  highlightLayer(id, true);
+  zoomToField(f);
+
+  // Mark active in list
+  document.querySelectorAll('.field-item').forEach(el => el.classList.remove('active'));
+  const li = document.getElementById(`li-${id}`);
+  if (li) { li.classList.add('active'); li.scrollIntoView({ block: 'nearest' }); }
+
+  showDetail(f);
+}
+
+function showDetail(f) {
+  document.getElementById('view-list').style.display = 'none';
+  const det = document.getElementById('view-detail');
+  det.style.display = 'flex';
+
+  document.getElementById('detail-title').textContent = f.name;
+  document.getElementById('detail-edit-btn').href = `/field-editor?id=${f.id}`;
+
+  const color = ownerColor(f.owner_id);
+  const initials = ownerInitials(f.owner_name);
+  const sowing   = f.sowing_date  ? formatDate(f.sowing_date)  : '–';
+  const harvest  = f.harvest_date ? formatDate(f.harvest_date) : '–';
+  const area     = f.area_ha ? `${f.area_ha.toFixed(4)} ha` : '–';
+  const lat      = f.lat ? f.lat.toFixed(5) : '–';
+  const lng      = f.lng ? f.lng.toFixed(5) : '–';
+  const mapsLink = f.lat && f.lng ? `https://maps.google.com/?q=${f.lat},${f.lng}` : '#';
+
+  document.getElementById('detail-body').innerHTML = `
+    <!-- Owner -->
+    <div class="detail-section">
+      <div class="detail-section-title">${t('section_owner')}</div>
+      <div class="detail-owner">
+        <div class="owner-avatar" style="background:${color}">${escHtml(initials)}</div>
+        <div>
+          <div class="owner-name">${escHtml(f.owner_name || '–')}</div>
+          <div class="owner-email">${escHtml(f.owner_email || '–')}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Crop -->
+    <div class="detail-section">
+      <div class="detail-section-title">${t('section_crop')}</div>
+      ${f.crop
+        ? `<span class="crop-chip">🌾 ${escHtml(f.crop)}</span>`
+        : `<span style="color:var(--text-muted);font-size:13px">–</span>`}
+      <div class="detail-grid" style="margin-top:10px">
+        <div class="detail-kv">
+          <div class="detail-kv-label">${t('lbl_sowing')}</div>
+          <div class="detail-kv-val">${sowing}</div>
+        </div>
+        <div class="detail-kv">
+          <div class="detail-kv-label">${t('lbl_harvest')}</div>
+          <div class="detail-kv-val">${harvest}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Field stats -->
+    <div class="detail-section">
+      <div class="detail-section-title">${t('section_field_data')}</div>
+      <div class="detail-grid">
+        <div class="detail-kv">
+          <div class="detail-kv-label">${t('lbl_area')}</div>
+          <div class="detail-kv-val">${area}</div>
+        </div>
+        <div class="detail-kv">
+          <div class="detail-kv-label">${t('lbl_added')}</div>
+          <div class="detail-kv-val">${escHtml(f.created_at || '–')}</div>
+        </div>
+        <div class="detail-kv">
+          <div class="detail-kv-label">${t('lbl_latitude')}</div>
+          <div class="detail-kv-val">${lat}</div>
+        </div>
+        <div class="detail-kv">
+          <div class="detail-kv-label">${t('lbl_longitude')}</div>
+          <div class="detail-kv-val">${lng}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="detail-actions">
+      <a href="${mapsLink}" target="_blank" class="btn btn-ghost btn-full">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/></svg>
+        ${t('google_maps')}
+      </a>
+    </div>
+  `;
+}
+
+function showList() {
+  if (activeId) highlightLayer(activeId, false);
+  activeId = null;
+  document.getElementById('view-detail').style.display = 'none';
+  document.getElementById('view-list').style.display = 'flex';
+  document.querySelectorAll('.field-item').forEach(el => el.classList.remove('active'));
+  if (filteredFields.length) {
+    const bounds = filteredFields
+      .filter(f => layerMap[f.id])
+      .map(f => layerMap[f.id])
+      .filter(l => l.getBounds)
+      .map(l => l.getBounds());
+    if (bounds.length) {
+      const combined = bounds.reduce((acc, b) => acc.extend(b));
+      map.fitBounds(combined, { padding: [20, 20] });
+    }
+  }
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────
+function buildLegend() {
+  const owners = ownersList.length
+    ? ownersList
+    : [...new Map(allFields.filter(f=>f.owner_id).map(f=>[f.owner_id,{id:f.owner_id,name:f.owner_name}])).values()];
+
+  if (!owners.length) return;
+
+  const el = document.getElementById('legend-items');
+  el.innerHTML = owners.slice(0, 12).map(o => {
+    const col = ownerColor(o.id);
+    const fc  = (ownersList.find(x=>x.id===o.id)||{}).field_count ?? '';
+    const lbl = `${o.name || o.email || '#'+o.id}${fc ? ` (${fc})` : ''}`;
+    return `<div class="legend-item" title="${escHtml(lbl)}">
+      <div class="legend-dot" style="background:${col}"></div>
+      <span>${escHtml(lbl)}</span>
+    </div>`;
+  }).join('');
+
+  // Unassigned
+  const noOwner = allFields.filter(f => !f.owner_id);
+  if (noOwner.length) {
+    el.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:#94a3b8"></div><span>${t('no_owner', noOwner.length)}</span></div>`;
+  }
+
+  document.getElementById('legend').style.display = '';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function formatDate(s) {
+  if (!s) return '–';
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  return d.toLocaleDateString('pl-PL', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+// ── Lang change ───────────────────────────────────────────────────────────
+window.addEventListener('langchange', () => {
+  // Re-render dynamic content
+  if (allFields.length) {
+    renderList(filteredFields);
+    buildLegend();
+    if (activeId !== null) {
+      const f = allFields.find(f => f.id === activeId);
+      if (f) showDetail(f);
+    }
+  }
+  // Update filter first options
+  const ownerSel = document.getElementById('q-owner');
+  const cropSel  = document.getElementById('q-crop');
+  if (ownerSel.options[0]) ownerSel.options[0].textContent = t('all_owners');
+  if (cropSel.options[0])  cropSel.options[0].textContent  = t('all_crops');
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>

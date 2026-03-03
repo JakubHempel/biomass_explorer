@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="pl" data-i18n-title="admin_page_title">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel – Biomass Explorer</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/static/i18n.js"></script>
+<style>
+:root {
+  --primary:#2563eb; --primary-dark:#1d4ed8; --primary-light:#dbeafe;
+  --bg:#f0f4f8; --surface:#fff; --text:#1e293b;
+  --text-secondary:#64748b; --text-muted:#94a3b8; --text-label:#475569;
+  --border:#e2e8f0; --border-input:#cbd5e0;
+  --success:#059669; --success-bg:#ecfdf5;
+  --error:#dc2626; --error-bg:#fef2f2;
+  --warning:#f59e0b; --warning-bg:#fffbeb;
+  --radius:10px; --radius-lg:14px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.06);
+  --shadow-md:0 4px 12px rgba(0,0,0,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* ---- topbar ---- */
+.topbar{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 28px;height:60px;
+  display:flex;align-items:center;gap:16px;
+  box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:100;
+}
+.topbar-logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+.topbar-logo-icon{width:34px;height:34px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border-radius:9px;display:flex;align-items:center;justify-content:center}
+.topbar-logo-icon svg{color:#fff}
+.topbar-title{font-size:16px;font-weight:800;letter-spacing:-.3px}
+.topbar-subtitle{font-size:11px;color:var(--text-secondary)}
+.topbar-spacer{flex:1}
+.topbar-user{display:flex;align-items:center;gap:10px}
+.user-badge{background:var(--primary-light);color:var(--primary-dark);font-size:12px;font-weight:600;padding:4px 10px;border-radius:20px}
+.role-badge{font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;background:#f0fdf4;color:#166534}
+.btn-logout{
+  background:none;border:1.5px solid var(--border);color:var(--text-secondary);
+  padding:6px 14px;border-radius:var(--radius);font-size:13px;font-weight:500;
+  cursor:pointer;font-family:inherit;transition:.15s;
+}
+.btn-logout:hover{background:var(--error-bg);border-color:#fca5a5;color:var(--error)}
+
+/* lang switcher */
+.lang-switch{display:flex;gap:3px;align-items:center}
+.lang-btn{
+  padding:3px 5px;border-radius:6px;border:1.5px solid transparent;
+  cursor:pointer;font-size:17px;background:none;line-height:1;
+  transition:all .12s;opacity:.55;
+}
+.lang-btn:hover{opacity:1;background:var(--bg)}
+.lang-btn.active{opacity:1;border-color:var(--primary);background:var(--primary-light)}
+
+/* ---- layout ---- */
+.content{max-width:1100px;margin:0 auto;padding:32px 24px}
+.page-header{margin-bottom:28px}
+.page-header h1{font-size:24px;font-weight:800;letter-spacing:-.4px}
+.page-header p{color:var(--text-secondary);font-size:14px;margin-top:4px}
+
+/* ---- tabs ---- */
+.tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:2px solid var(--border)}
+.tab{
+  padding:10px 20px;font-size:14px;font-weight:600;
+  cursor:pointer;border:none;background:none;font-family:inherit;color:var(--text-secondary);
+  border-bottom:2px solid transparent;margin-bottom:-2px;border-radius:6px 6px 0 0;transition:.15s;
+}
+.tab.active{color:var(--primary);border-bottom-color:var(--primary);background:var(--primary-light)}
+.tab:hover:not(.active){color:var(--text);background:var(--bg)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ---- card ---- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden}
+.card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-header h2{font-size:16px;font-weight:700}
+.card-header p{font-size:13px;color:var(--text-secondary);margin-top:2px}
+
+/* ---- table ---- */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{background:#f8fafc;padding:10px 16px;text-align:left;font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+td{padding:12px 16px;border-bottom:1px solid var(--border-light, #f1f5f9);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafbfd}
+
+/* ---- badges ---- */
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px}
+.badge-admin{background:#ede9fe;color:#5b21b6}
+.badge-user{background:#f0f9ff;color:#0369a1}
+.badge-active{background:var(--success-bg);color:var(--success)}
+.badge-inactive{background:#f1f5f9;color:var(--text-muted)}
+
+/* ---- buttons ---- */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 16px;border-radius:var(--radius);font-size:13px;font-weight:600;
+  cursor:pointer;border:none;font-family:inherit;transition:.15s;
+}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.btn-sm{padding:5px 11px;font-size:12px}
+.btn-ghost{background:none;border:1.5px solid var(--border);color:var(--text-secondary)}
+.btn-ghost:hover{background:var(--bg);border-color:var(--border-input);color:var(--text)}
+.btn-danger{background:none;border:1.5px solid #fca5a5;color:var(--error)}
+.btn-danger:hover{background:var(--error-bg)}
+
+/* ---- empty state ---- */
+.empty-state{text-align:center;padding:48px 24px;color:var(--text-muted)}
+.empty-state svg{margin-bottom:12px;opacity:.4}
+.empty-state p{font-size:14px}
+
+/* ---- modal ---- */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;padding:16px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:var(--radius-lg);box-shadow:0 20px 60px rgba(0,0,0,.2);width:480px;max-width:100%;max-height:90vh;overflow-y:auto}
+.modal-header{padding:20px 24px 0;display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:18px;font-weight:700}
+.modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-secondary);line-height:1;padding:0 4px}
+.modal-close:hover{color:var(--text)}
+.modal-body{padding:20px 24px}
+.modal-footer{padding:0 24px 20px;display:flex;justify-content:flex-end;gap:10px}
+label{display:block;font-size:13px;font-weight:600;color:var(--text-label);margin-bottom:5px}
+input,select{
+  width:100%;padding:9px 13px;
+  border:1.5px solid var(--border-input);border-radius:var(--radius);
+  font-size:14px;font-family:inherit;color:var(--text);background:#f8fafc;outline:none;transition:.15s;
+}
+input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.1);background:#fff}
+.form-field{margin-bottom:16px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.toast{
+  position:fixed;bottom:24px;right:24px;z-index:9999;
+  padding:12px 18px;border-radius:var(--radius);font-size:14px;font-weight:500;
+  box-shadow:0 4px 20px rgba(0,0,0,.15);transform:translateY(20px);opacity:0;transition:.25s;pointer-events:none;
+}
+.toast.show{transform:none;opacity:1}
+.toast.success{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.toast.error{background:var(--error-bg);color:var(--error);border:1px solid #fca5a5}
+.actions-row{display:flex;gap:6px}
+.empty-cell{color:var(--text-muted);font-style:italic}
+.coord{font-family:'JetBrains Mono',monospace;font-size:12px}
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<header class="topbar">
+  <a class="topbar-logo" href="/">
+    <div class="topbar-logo-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+        <path d="M2 12h20"/>
+      </svg>
+    </div>
+    <div>
+      <div class="topbar-title" data-i18n="admin_title">Biomass Explorer</div>
+      <div class="topbar-subtitle" data-i18n="admin_subtitle">Admin Panel</div>
+    </div>
+  </a>
+  <div class="topbar-spacer"></div>
+  <div class="lang-switch">
+    <button class="lang-btn" data-lang="pl" onclick="applyLang('pl')" data-i18n-title="lang_pl_title" title="Zmień na polski">🇵🇱</button>
+    <button class="lang-btn" data-lang="en" onclick="applyLang('en')" data-i18n-title="lang_en_title" title="Switch to English">🇬🇧</button>
+  </div>
+  <div class="topbar-user">
+    <span class="user-badge" id="username-badge">–</span>
+    <span class="role-badge" id="role-badge">user</span>
+    <button class="btn-logout" onclick="logout()" data-i18n="logout">Wyloguj</button>
+  </div>
+</header>
+
+<!-- Content -->
+<main class="content">
+  <div class="page-header">
+    <h1 data-i18n="admin_h1">Panel administracyjny</h1>
+    <p data-i18n="admin_desc">Zarządzaj użytkownikami i polami uprawni</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('users')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px;margin-right:6px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span data-i18n="tab_users">Użytkownicy</span>
+    </button>
+    <button class="tab" onclick="switchTab('fields')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px;margin-right:6px"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+      <span data-i18n="tab_fields">Pola uprawne</span>
+    </button>
+  </div>
+
+  <!-- Users tab -->
+  <div id="tab-users" class="tab-panel active">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 data-i18n="users_card_title">Użytkownicy systemu</h2>
+          <p id="users-count" data-i18n="loading">Ładowanie…</p>
+        </div>
+        <button class="btn btn-primary" onclick="openUserModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span data-i18n="add_user">Dodaj użytkownika</span>
+        </button>
+      </div>
+      <div id="users-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-i18n="th_id">#</th>
+              <th data-i18n="th_username">Użytkownik</th>
+              <th data-i18n="th_email">E-mail</th>
+              <th data-i18n="th_fullname">Imię i nazwisko</th>
+              <th data-i18n="th_role">Rola</th>
+              <th data-i18n="th_status">Status</th>
+              <th data-i18n="th_created">Utworzony</th>
+              <th data-i18n="th_actions">Akcje</th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fields tab -->
+  <div id="tab-fields" class="tab-panel">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 data-i18n="fields_card_title">Pola uprawne</h2>
+          <p id="fields-count" data-i18n="loading">Ładowanie…</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <a href="/fields" class="btn btn-primary" style="text-decoration:none;background:#0891b2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+            <span data-i18n="view_on_map">Przeglądaj na mapie</span>
+          </a>
+          <a href="/field-editor" class="btn btn-primary" style="text-decoration:none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span data-i18n="draw_field">Narysuj nowe pole</span>
+          </a>
+        </div>
+      </div>
+      <div id="fields-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-i18n="th_field_id">ID</th>
+              <th data-i18n="th_field_name">Nazwa pola</th>
+              <th data-i18n="th_latlng">Lat / Lng</th>
+              <th data-i18n="th_area">Pow. (ha)</th>
+              <th data-i18n="th_field_created">Utworzone</th>
+              <th data-i18n="th_actions">Akcje</th>
+            </tr>
+          </thead>
+          <tbody id="fields-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- User modal -->
+<div class="modal-overlay" id="user-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Nowy użytkownik</h3>
+      <button class="modal-close" onclick="closeUserModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-field">
+          <label data-i18n="lbl_username">Nazwa użytkownika *</label>
+          <input id="f-username" type="text" data-i18n-ph="ph_username" placeholder="jan.kowalski">
+        </div>
+        <div class="form-field">
+          <label data-i18n="lbl_role">Rola</label>
+          <select id="f-role">
+            <option value="user" data-i18n="opt_user">Użytkownik</option>
+            <option value="admin" data-i18n="opt_admin">Administrator</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field">
+        <label data-i18n="lbl_fullname">Imię i nazwisko</label>
+        <input id="f-fullname" type="text" data-i18n-ph="ph_fullname" placeholder="Jan Kowalski">
+      </div>
+      <div class="form-field">
+        <label data-i18n="lbl_email">E-mail</label>
+        <input id="f-email" type="email" data-i18n-ph="ph_email" placeholder="jan@firma.pl">
+      </div>
+      <div class="form-field">
+        <label id="f-password-label" data-i18n="lbl_password_new">Hasło *</label>
+        <input id="f-password" type="password" data-i18n-ph="ph_password" placeholder="Minimum 6 znaków">
+      </div>
+      <div id="modal-error" style="color:var(--error);font-size:13px;margin-top:4px;display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeUserModal()" data-i18n="cancel">Anuluj</button>
+      <button class="btn btn-primary" onclick="saveUser()" id="btn-save-user" data-i18n="save">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = window.location.origin;
+let token = localStorage.getItem('bm_token');
+let editingUserId = null;
+let cachedUsers = null;
+let cachedFields = null;
+
+if (!token) { window.location.href = '/login'; }
+document.getElementById('username-badge').textContent = localStorage.getItem('bm_username') || '–';
+document.getElementById('role-badge').textContent = localStorage.getItem('bm_role') || 'user';
+
+initLang();
+
+const hdrs = () => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` });
+
+async function apiFetch(url, opts = {}) {
+  const res = await fetch(url, { ...opts, headers: { ...hdrs(), ...(opts.headers||{}) } });
+  if (res.status === 401) { logout(); return; }
+  return res;
+}
+
+function logout() {
+  ['bm_token','bm_role','bm_username','bm_fullname'].forEach(k => localStorage.removeItem(k));
+  window.location.href = '/login';
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'fields') loadFields();
+}
+
+function showToast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = `toast ${type} show`;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── USERS ─────────────────────────────────────────────────────────────────────
+
+function renderUsersTable(users) {
+  cachedUsers = users;
+  document.getElementById('users-count').textContent = t('n_users', users.length);
+  const tbody = document.getElementById('users-tbody');
+  if (!users.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><p>${t('empty_users')}</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td>${u.id}</td>
+      <td><strong>${esc(u.username)}</strong></td>
+      <td>${u.email ? esc(u.email) : '<span class="empty-cell">–</span>'}</td>
+      <td>${u.full_name ? esc(u.full_name) : '<span class="empty-cell">–</span>'}</td>
+      <td><span class="badge badge-${u.role}">${u.role === 'admin' ? t('role_admin') : t('role_user')}</span></td>
+      <td><span class="badge ${u.is_active ? 'badge-active' : 'badge-inactive'}">${u.is_active ? t('status_active') : t('status_inactive')}</span></td>
+      <td>${u.created_at ? u.created_at.slice(0,10) : '–'}</td>
+      <td>
+        <div class="actions-row">
+          <button class="btn btn-ghost btn-sm" onclick='openEditModal(${JSON.stringify(u).replace(/'/g,"&#39;")})'>${t('edit')}</button>
+          ${u.is_active ? `<button class="btn btn-danger btn-sm" onclick="deactivateUser(${u.id},'${esc(u.username)}')">${t('deactivate')}</button>` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function loadUsers() {
+  const res = await apiFetch('/admin/users');
+  if (!res) return;
+  if (!res.ok) { showToast(t('no_admin_access'), 'error'); return; }
+  renderUsersTable(await res.json());
+}
+
+// ── USER MODAL ────────────────────────────────────────────────────────────────
+
+function openUserModal() {
+  editingUserId = null;
+  document.getElementById('modal-title').textContent = t('modal_new_user');
+  document.getElementById('f-password-label').dataset.i18n = 'lbl_password_new';
+  document.getElementById('f-password-label').textContent = t('lbl_password_new');
+  ['f-username','f-fullname','f-email','f-password'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-role').value = 'user';
+  document.getElementById('f-username').disabled = false;
+  document.getElementById('modal-error').style.display = 'none';
+  document.getElementById('user-modal').classList.add('open');
+  document.getElementById('f-username').focus();
+}
+
+function openEditModal(u) {
+  editingUserId = u.id;
+  document.getElementById('modal-title').textContent = t('modal_edit_user');
+  document.getElementById('f-password-label').dataset.i18n = 'lbl_password_edit';
+  document.getElementById('f-password-label').textContent = t('lbl_password_edit');
+  document.getElementById('f-username').value = u.username;
+  document.getElementById('f-username').disabled = true;
+  document.getElementById('f-fullname').value = u.full_name || '';
+  document.getElementById('f-email').value = u.email || '';
+  document.getElementById('f-password').value = '';
+  document.getElementById('f-role').value = u.role;
+  document.getElementById('modal-error').style.display = 'none';
+  document.getElementById('user-modal').classList.add('open');
+}
+
+function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); }
+
+async function saveUser() {
+  const errEl = document.getElementById('modal-error');
+  errEl.style.display = 'none';
+  const btn = document.getElementById('btn-save-user');
+  btn.disabled = true; btn.textContent = t('saving');
+
+  try {
+    const body = {
+      full_name: document.getElementById('f-fullname').value.trim() || null,
+      email:     document.getElementById('f-email').value.trim() || null,
+      role:      document.getElementById('f-role').value,
+    };
+    const pw = document.getElementById('f-password').value;
+    if (pw) body.password = pw;
+
+    let res;
+    if (editingUserId) {
+      res = await apiFetch(`/admin/users/${editingUserId}`, { method: 'PUT', body: JSON.stringify(body) });
+    } else {
+      const username = document.getElementById('f-username').value.trim();
+      if (!username) { errEl.textContent = t('val_username_req'); errEl.style.display='block'; return; }
+      if (!pw)       { errEl.textContent = t('val_password_req'); errEl.style.display='block'; return; }
+      body.username = username; body.password = pw;
+      res = await apiFetch('/admin/users', { method: 'POST', body: JSON.stringify(body) });
+    }
+
+    if (!res.ok) {
+      const d = await res.json();
+      errEl.textContent = d.detail || t('err_save');
+      errEl.style.display = 'block'; return;
+    }
+
+    closeUserModal();
+    showToast(editingUserId ? t('toast_updated') : t('toast_created'));
+    loadUsers();
+  } catch(e) {
+    errEl.textContent = e.message; errEl.style.display='block';
+  } finally {
+    btn.disabled = false; btn.textContent = t('save');
+  }
+}
+
+async function deactivateUser(id, username) {
+  if (!confirm(t('confirm_deactivate', username))) return;
+  const res = await apiFetch(`/admin/users/${id}`, { method: 'DELETE' });
+  if (res && res.ok) { showToast(t('toast_deactivated')); loadUsers(); }
+  else showToast(t('err_deactivate'), 'error');
+}
+
+// ── FIELDS ────────────────────────────────────────────────────────────────────
+
+function renderFieldsTable(fields) {
+  cachedFields = fields;
+  document.getElementById('fields-count').textContent = t('n_fields', fields.length);
+  const tbody = document.getElementById('fields-tbody');
+  if (!fields.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state" style="padding:40px"><p>${t('empty_fields')}</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = fields.map(f => {
+    const areaHa = f.area ? (f.area / 10000).toFixed(2) : '–';
+    const lat = f.lat ? Number(f.lat).toFixed(5) : '–';
+    const lng = f.lng ? Number(f.lng).toFixed(5) : '–';
+    return `
+    <tr>
+      <td>${f.id}</td>
+      <td><strong>${esc(f.name)}</strong></td>
+      <td class="coord">${lat}, ${lng}</td>
+      <td>${areaHa}</td>
+      <td>${f.created_at || '–'}</td>
+      <td><a class="btn btn-ghost btn-sm" href="/?field_id=${f.id}" style="text-decoration:none">${t('open')}</a></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadFields() {
+  const res = await apiFetch('/api/fields');
+  if (!res) return;
+  renderFieldsTable(res.ok ? await res.json() : []);
+}
+
+// ── LANG CHANGE ───────────────────────────────────────────────────────────────
+
+window.addEventListener('langchange', () => {
+  if (cachedUsers  !== null) renderUsersTable(cachedUsers);
+  if (cachedFields !== null) renderFieldsTable(cachedFields);
+  // Keep modal label in sync if open
+  if (document.getElementById('user-modal').classList.contains('open')) {
+    const lbl = document.getElementById('f-password-label');
+    lbl.textContent = t(lbl.dataset.i18n || (editingUserId ? 'lbl_password_edit' : 'lbl_password_new'));
+    document.getElementById('modal-title').textContent = t(editingUserId ? 'modal_edit_user' : 'modal_new_user');
+  }
+});
+
+// ── EVENTS ────────────────────────────────────────────────────────────────────
+
+document.getElementById('user-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeUserModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeUserModal();
+  if (e.key === 'Enter' && document.getElementById('user-modal').classList.contains('open')) saveUser();
+});
+
+loadUsers();
+</script>
+</body>
+</html>

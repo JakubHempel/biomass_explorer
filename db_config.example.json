@@ -1,0 +1,8 @@
+{
+  "host": "localhost",
+  "port": 5432,
+  "database": "twoja_baza",
+  "user": "uzytkownik",
+  "password": "",
+  "sslmode": "prefer"
+}

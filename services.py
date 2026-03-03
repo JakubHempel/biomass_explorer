@@ -1,6 +1,6 @@
 import ee
 import statistics
-from datetime import date as date_type
+from datetime import date as date_type, datetime, time as time_type
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from schemas import AnalysisRequest, BiomassResponse
 from sqlalchemy.orm import Session
@@ -408,13 +408,16 @@ def save_results_to_db(db: Session, result_data: dict):
 
     for item in result_data["timeseries"]:
         measurement_date = date_type.fromisoformat(item["date"])
+        # captured_at: start of day (UTC) for compatibility with obs.vegetation_indices.captured_at TIMESTAMPTZ
+        captured_at = datetime.combine(measurement_date, time_type.min)
         sensor = item.get("sensor", "")
+        source = sensor
         values = item["values"]
 
         existing = db.query(models.Measurement).filter(
             models.Measurement.field_id == field_id,
-            models.Measurement.date == measurement_date,
-            models.Measurement.sensor == sensor
+            models.Measurement.captured_at == captured_at,
+            models.Measurement.source == source,
         ).first()
 
         if existing:
@@ -430,14 +433,17 @@ def save_results_to_db(db: Session, result_data: dict):
 
         db_record = models.Measurement(
             field_id=field_id,
-            date=measurement_date,
+            captured_at=captured_at,
             sensor=sensor,
-            # Sentinel-2
+            source=source,
+            # Classic indices (obs.vegetation_indices)
             ndvi=values.get("NDVI"),
-            ndre=values.get("NDRE"),
             gndvi=values.get("GNDVI"),
             evi=values.get("EVI"),
             savi=values.get("SAVI"),
+            ndre=values.get("NDRE"),
+            # msavi2, osavi, reip, ndwi, lai, canopy_cover, biomass_est, source_image_id left NULL
+            # Extra Sentinel-2
             cire=values.get("CIre"),
             mtci=values.get("MTCI"),
             ireci=values.get("IRECI"),

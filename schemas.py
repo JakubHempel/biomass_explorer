@@ -1,5 +1,101 @@
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    username: str
+    full_name: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# User management
+# ---------------------------------------------------------------------------
+
+class UserCreate(BaseModel):
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    password: str
+    role: str = "user"
+
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: str
+    is_active: bool
+    created_at: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Field editor
+# ---------------------------------------------------------------------------
+
+class FieldCreateRequest(BaseModel):
+    name: str
+    geojson: Dict[str, Any]         # GeoJSON Polygon geometry
+    owner_valid_from: str           # ISO date "YYYY-MM-DD" — owner since
+    crop_name: str
+    sowing_date: str                # ISO date "YYYY-MM-DD"
+    notes: Optional[str] = None
+
+
+class FieldUpdateRequest(BaseModel):
+    name: str
+    crop_name: str
+    sowing_date: str                # ISO date "YYYY-MM-DD"
+    harvest_date: Optional[str] = None
+    notes: Optional[str] = None
+    geojson: Optional[Dict[str, Any]] = None   # only if polygon was redrawn
+
+
+class FieldResponse(BaseModel):
+    field_id: int
+    name: str
+    lat: float
+    lng: float
+    area_m2: float
+    crop_id: int
+    field_crop_id: int
+
+
+class FieldDetailResponse(BaseModel):
+    field_id: int
+    name: str
+    owner_valid_from: Optional[str] = None
+    owner_email: Optional[str] = None
+    owner_name: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    area_m2: Optional[float] = None
+    crop_name: Optional[str] = None
+    sowing_date: Optional[str] = None
+    harvest_date: Optional[str] = None
+    field_crop_id: Optional[int] = None
+    geojson: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
 
 class AnalysisRequest(BaseModel):
     field_id: str

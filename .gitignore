@@ -1,6 +1,7 @@
 # Credentials
 gee-key.json
 .env
+db_config.json
 
 # Database
 biomass_results.db

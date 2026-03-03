@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="pl" data-i18n-title="editor_page_title">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Edytor pól – Biomass Explorer</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<script src="/static/i18n.js"></script>
+<style>
+:root{
+  --primary:#2563eb;--primary-dark:#1d4ed8;--primary-light:#dbeafe;
+  --bg:#f0f4f8;--surface:#fff;--text:#1e293b;
+  --text-secondary:#64748b;--text-muted:#94a3b8;--text-label:#475569;
+  --border:#e2e8f0;--border-input:#cbd5e0;
+  --success:#059669;--success-bg:#ecfdf5;
+  --error:#dc2626;--error-bg:#fef2f2;
+  --warning:#f59e0b;--warning-bg:#fffbeb;
+  --radius:9px;--radius-lg:13px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.06);
+  --panel:380px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Inter',-apple-system,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;overflow:hidden}
+
+/* ── topbar ── */
+.topbar{height:52px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;box-shadow:var(--shadow-sm);z-index:600;position:relative}
+.tb-back{display:flex;align-items:center;gap:5px;color:var(--text-secondary);text-decoration:none;font-size:13px;font-weight:500;padding:5px 9px;border-radius:7px;transition:.15s}
+.tb-back:hover{background:var(--bg);color:var(--text)}
+.tb-title{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.tb-mode{font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;background:var(--primary-light);color:var(--primary-dark)}
+.tb-mode.edit{background:#fef3c7;color:#92400e}
+.tb-spacer{flex:1}
+.tb-user{font-size:12px;color:var(--text-muted)}
+.tb-logout{background:none;border:none;cursor:pointer;color:var(--text-muted);font-family:inherit;font-size:12px;padding:4px 8px;border-radius:6px;transition:.15s}
+.tb-logout:hover{color:var(--error)}
+/* lang switcher */
+.lang-switch{display:flex;gap:3px;align-items:center}
+.lang-btn{padding:2px 5px;border-radius:6px;border:1.5px solid transparent;cursor:pointer;font-size:15px;background:none;line-height:1;transition:all .12s;opacity:.55}
+.lang-btn:hover{opacity:1;background:var(--bg)}
+.lang-btn.active{opacity:1;border-color:var(--primary);background:var(--primary-light)}
+
+/* ── layout ── */
+.layout{display:flex;height:calc(100vh - 52px);overflow:hidden}
+.panel{
+  width:var(--panel);min-width:var(--panel);
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;z-index:200;
+  height:calc(100vh - 52px);   /* explicit full height */
+  overflow:hidden;
+}
+.panel-scroll{
+  flex:1;
+  height:0;                    /* forces browser to use flex-grow, not content height */
+  overflow-y:scroll;           /* always-visible scrollbar prevents layout shift */
+  padding:12px 14px 8px;
+  scrollbar-width:thin;
+  scrollbar-color:var(--border-input) transparent;
+}
+.panel-scroll::-webkit-scrollbar{width:6px}
+.panel-scroll::-webkit-scrollbar-track{background:transparent}
+.panel-scroll::-webkit-scrollbar-thumb{background:var(--border-input);border-radius:10px}
+.panel-footer{flex-shrink:0;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface)}
+.map-wrap{flex:1;position:relative;overflow:hidden}
+#map{position:absolute;inset:0;width:100%;height:100%}
+
+/* ── accordion ── */
+.acc{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.acc-head{
+  display:flex;align-items:center;gap:8px;padding:10px 12px;
+  background:#f8fafc;cursor:pointer;user-select:none;
+  border-bottom:1px solid transparent;transition:.15s;
+}
+.acc-head:hover{background:#f1f5f9}
+.acc-head.open{border-bottom-color:var(--border);background:#fff}
+.acc-head-icon{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.acc-head-icon.blue{background:var(--primary-light)}
+.acc-head-icon.blue svg{color:var(--primary-dark)}
+.acc-head-icon.green{background:#d1fae5}
+.acc-head-icon.green svg{color:#065f46}
+.acc-head-icon.amber{background:#fef3c7}
+.acc-head-icon.amber svg{color:#92400e}
+.acc-head-icon.slate{background:#f1f5f9}
+.acc-head-icon.slate svg{color:var(--text-secondary)}
+.acc-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-label);flex:1}
+.acc-meta{font-size:11px;color:var(--text-muted);margin-right:4px}
+.acc-chevron{transition:transform .2s;flex-shrink:0;color:var(--text-muted)}
+.acc-chevron.open{transform:rotate(180deg)}
+.acc-body{display:none;padding:12px}
+.acc-body.open{display:block}
+
+/* ── field list ── */
+.field-list-search{
+  display:flex;align-items:center;gap:8px;
+  background:#f8fafc;border:1.5px solid var(--border-input);
+  border-radius:var(--radius);padding:7px 10px;margin-bottom:8px;
+}
+.field-list-search input{border:none;outline:none;background:transparent;font-size:13px;font-family:inherit;color:var(--text);flex:1}
+.field-list-search svg{color:var(--text-muted);flex-shrink:0}
+.field-list{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.field-item{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;
+  border-radius:7px;cursor:pointer;transition:.15s;
+  border:1.5px solid transparent;
+}
+.field-item:hover{background:var(--bg);border-color:var(--border)}
+.field-item.active{background:var(--primary-light);border-color:#bfdbfe}
+.field-item-id{font-size:10px;font-weight:700;color:var(--text-muted);min-width:24px;font-family:'JetBrains Mono',monospace}
+.field-item-main{flex:1;min-width:0}
+.field-item-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.field-item-sub{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.field-item-area{font-size:11px;color:var(--text-secondary);font-family:'JetBrains Mono',monospace;flex-shrink:0}
+.empty-list{text-align:center;padding:20px;color:var(--text-muted);font-size:13px}
+.btn-new-field{
+  width:100%;margin-top:6px;padding:7px;border-radius:var(--radius);
+  background:var(--primary-light);color:var(--primary-dark);
+  border:1.5px dashed #93c5fd;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;
+  transition:.15s;
+}
+.btn-new-field:hover{background:#bfdbfe}
+
+/* ── form elements ── */
+label{display:block;font-size:12px;font-weight:600;color:var(--text-label);margin-bottom:4px}
+input,select,textarea{
+  width:100%;padding:8px 11px;
+  border:1.5px solid var(--border-input);border-radius:var(--radius);
+  font-size:13px;font-family:inherit;color:var(--text);background:#f8fafc;outline:none;transition:.15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.1);background:#fff}
+input[readonly]{background:#f1f5f9;color:var(--text-secondary);cursor:default}
+textarea{min-height:52px;resize:vertical}
+.form-field{margin-bottom:10px}
+.form-field:last-child{margin-bottom:0}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* ── owner card ── */
+.owner-card{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#f8fafc;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px}
+.owner-av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex-shrink:0}
+.owner-name{font-size:12px;font-weight:600}
+.owner-sub{font-size:11px;color:var(--text-muted)}
+
+/* ── draw hint ── */
+.draw-hint{background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1.5px solid #bfdbfe;border-radius:var(--radius);padding:10px 12px;display:flex;gap:10px;align-items:flex-start}
+.dh-icon{flex-shrink:0;width:28px;height:28px;background:var(--primary);border-radius:7px;display:flex;align-items:center;justify-content:center}
+.dh-text strong{font-size:12px;font-weight:700;color:#1e3a8a}
+.dh-text p{font-size:11px;color:#3b82f6;margin-top:2px;line-height:1.5}
+.draw-hint.success{background:#f0fdf4;border-color:#a7f3d0}
+.draw-hint.success .dh-icon{background:var(--success)}
+.draw-hint.success .dh-text strong{color:#064e3b}
+.draw-hint.success .dh-text p{color:var(--success)}
+
+.stats-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px}
+.stat-m{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:7px 8px;text-align:center}
+.stat-m-l{font-size:10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.stat-m-v{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:2px}
+.btn-clear{background:none;border:1.5px solid var(--border);color:var(--text-secondary);padding:5px 10px;border-radius:7px;font-size:11px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;margin-top:6px;transition:.15s}
+.btn-clear:hover{background:var(--bg)}
+
+/* ── crop quickpicks ── */
+.crop-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.cbadge{background:var(--bg);border:1.5px solid var(--border);color:var(--text-secondary);font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;cursor:pointer;transition:.15s}
+.cbadge:hover,.cbadge.sel{background:var(--primary);border-color:var(--primary);color:#fff}
+.input-row{display:flex;gap:6px}
+.input-row input{flex:1}
+.btn-inline{flex-shrink:0;padding:8px 10px;background:var(--primary-light);color:var(--primary-dark);border:1.5px solid #bfdbfe;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;transition:.15s}
+.btn-inline:hover{background:#bfdbfe}
+
+/* ── save button ── */
+.btn-save{
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  width:100%;padding:10px;border-radius:var(--radius);
+  font-size:13px;font-weight:700;cursor:pointer;border:none;font-family:inherit;
+  background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;
+  transition:.15s;
+}
+.btn-save:hover{opacity:.92;transform:translateY(-1px)}
+.btn-save:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-save.edit-mode{background:linear-gradient(135deg,#0d9488,#0f766e)}
+
+/* ── status ── */
+.status-bar{padding:9px 12px;border-radius:var(--radius);font-size:12px;font-weight:500;display:none;align-items:center;gap:7px;margin-top:6px}
+.status-bar.show{display:flex}
+.status-bar.info{background:var(--primary-light);color:#1e3a8a;border:1px solid #bfdbfe}
+.status-bar.success{background:var(--success-bg);color:#065f46;border:1px solid #a7f3d0}
+.status-bar.error{background:var(--error-bg);color:var(--error);border:1px solid #fca5a5}
+.status-bar.warning{background:var(--warning-bg);color:#78350f;border:1px solid #fcd34d}
+
+/* ── map overlays ── */
+.map-badge{position:absolute;bottom:32px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.82);color:#fff;border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;z-index:400;pointer-events:none;display:none;font-family:'JetBrains Mono',monospace}
+.map-badge.show{display:block}
+.map-tip{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.85);color:#fff;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:500;z-index:400;pointer-events:none;display:none;white-space:nowrap}
+.map-tip.show{display:block}
+
+/* ── spinner ── */
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- topbar -->
+<header class="topbar">
+  <a class="tb-back" href="/admin">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    <span data-i18n="back">Admin</span>
+  </a>
+  <span style="color:var(--border)">|</span>
+  <span class="tb-title" id="tb-title">Nowe pole uprawne</span>
+  <span class="tb-mode" id="tb-mode">Nowe</span>
+  <div class="tb-spacer"></div>
+  <div class="lang-switch">
+    <button class="lang-btn" data-lang="pl" onclick="applyLang('pl')" data-i18n-title="lang_pl_title" title="Zmień na polski">🇵🇱</button>
+    <button class="lang-btn" data-lang="en" onclick="applyLang('en')" data-i18n-title="lang_en_title" title="Switch to English">🇬🇧</button>
+  </div>
+  <span class="tb-user" id="tb-user">–</span>
+  <button class="tb-logout" onclick="logout()" data-i18n="logout">Wyloguj</button>
+</header>
+
+<!-- layout -->
+<div class="layout">
+
+  <!-- ═══ PANEL ═══ -->
+  <aside class="panel">
+    <div class="panel-scroll">
+
+      <!-- ① LISTA PÓL -->
+      <div class="acc" id="acc-list">
+        <div class="acc-head" onclick="toggleAcc('acc-list')">
+          <div class="acc-head-icon slate">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          </div>
+          <span class="acc-label" data-i18n="section_fields_db">Pola w bazie</span>
+          <span class="acc-meta" id="fields-count-meta" data-i18n="loading_db">ładowanie…</span>
+          <svg class="acc-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="acc-body" id="acc-list-body">
+          <div class="field-list-search">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="field-search" type="text" data-i18n-ph="ph_search_fields" placeholder="Szukaj pola…" oninput="filterFieldList(this.value)">
+          </div>
+          <div class="field-list" id="field-list-wrap"></div>
+          <button class="btn-new-field" onclick="switchToNewMode()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span data-i18n="new_field_btn">Nowe pole</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ② GEOMETRIA (draw hint / stats) -->
+      <div id="geom-section">
+        <div class="draw-hint" id="draw-hint">
+          <div class="dh-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+          </div>
+          <div class="dh-text">
+            <strong data-i18n="draw_hint_title">Narysuj obrys pola na mapie</strong>
+            <p data-i18n="draw_hint_text">Kliknij ikonę <b>wielokąta</b> ↑ (lewy-górny róg mapy), zaznacz wierzchołki, podwójne kliknięcie = zamknij.</p>
+          </div>
+        </div>
+        <div id="geom-done" style="display:none">
+          <div class="draw-hint success">
+            <div class="dh-icon">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="dh-text">
+              <strong data-i18n="outline_ready">Obrys gotowy</strong>
+              <p id="geom-summary">–</p>
+            </div>
+          </div>
+          <div class="stats-row">
+            <div class="stat-m"><div class="stat-m-l" data-i18n="lbl_pow">Pow.</div><div class="stat-m-v" id="s-area">–</div></div>
+            <div class="stat-m"><div class="stat-m-l" data-i18n="lbl_perimeter">Obwód</div><div class="stat-m-v" id="s-perim">–</div></div>
+            <div class="stat-m"><div class="stat-m-l" data-i18n="lbl_points">Punkty</div><div class="stat-m-v" id="s-pts">–</div></div>
+          </div>
+          <button class="btn-clear" onclick="clearPolygon()">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            <span data-i18n="clear_polygon">Usuń obrys</span>
+          </button>
+        </div>
+        <div id="edit-geom-hint" style="display:none">
+          <div class="draw-hint" style="background:#fffbeb;border-color:#fcd34d">
+            <div class="dh-icon" style="background:#f59e0b">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </div>
+            <div class="dh-text">
+              <strong data-i18n="edit_mode_title">Tryb edycji</strong>
+              <p data-i18n="edit_mode_text">Istniejący obrys widoczny na mapie. Narysuj nowy wielokąt <b>tylko jeśli</b> chcesz go zmienić.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ③ DANE POLA -->
+      <div class="acc" id="acc-field">
+        <div class="acc-head open" onclick="toggleAcc('acc-field')">
+          <div class="acc-head-icon blue">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+          </div>
+          <span class="acc-label" data-i18n="section_data">Dane pola</span>
+          <svg class="acc-chevron open" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="acc-body open" id="acc-field-body">
+          <div class="form-field">
+            <label data-i18n="lbl_field_name">Nazwa pola *</label>
+            <input id="f-name" type="text" data-i18n-ph="ph_field_name" placeholder="np. Łąka Wschodnia, Pole 3A…" maxlength="200">
+          </div>
+          <div class="form-field">
+            <label data-i18n="lbl_notes">Uwagi / opis</label>
+            <textarea id="f-notes" rows="2" data-i18n-ph="ph_notes" placeholder="Dodatkowe informacje…"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- ④ WŁAŚCICIEL -->
+      <div class="acc" id="acc-owner">
+        <div class="acc-head" onclick="toggleAcc('acc-owner')">
+          <div class="acc-head-icon green">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <span class="acc-label" data-i18n="section_owner_ed">Właściciel</span>
+          <svg class="acc-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="acc-body" id="acc-owner-body">
+          <div class="owner-card">
+            <div class="owner-av" id="owner-av">?</div>
+            <div>
+              <div class="owner-name" id="owner-nm">–</div>
+              <div class="owner-sub" id="owner-sub">–</div>
+            </div>
+          </div>
+          <div class="form-field">
+            <label><span data-i18n="lbl_owner_since">Właściciel od *</span> <span style="font-weight:400;color:var(--text-muted)" data-i18n="owner_since_sub">(data przejęcia pola)</span></label>
+            <input id="f-valid-from" type="date">
+          </div>
+        </div>
+      </div>
+
+      <!-- ⑤ UPRAWA -->
+      <div class="acc" id="acc-crop">
+        <div class="acc-head" onclick="toggleAcc('acc-crop')">
+          <div class="acc-head-icon amber">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V12"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><path d="M12 12C12 7 7 2 2 2c0 5 4.5 9.5 10 10z"/><path d="M12 12c0-5 5-10 10-10 0 5-4.5 9.5-10 10z"/></svg>
+          </div>
+          <span class="acc-label" data-i18n="section_crop_ed">Uprawa</span>
+          <span class="acc-meta" id="crop-meta"></span>
+          <svg class="acc-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="acc-body" id="acc-crop-body">
+          <div class="form-field">
+            <label data-i18n="lbl_crop_type">Rodzaj uprawy *</label>
+            <div class="input-row">
+              <select id="f-crop" onchange="onCropSelect()">
+                <option value="" data-i18n="crop_select_default">— wybierz —</option>
+              </select>
+              <button class="btn-inline" onclick="toggleNewCrop()" data-i18n="new_crop_btn">+ Nowa</button>
+            </div>
+            <div id="new-crop-row" style="display:none;margin-top:6px">
+              <div class="input-row">
+                <input id="f-crop-new" type="text" data-i18n-ph="ph_new_crop" placeholder="Nazwa nowej uprawy…">
+                <button class="btn-inline" onclick="addNewCrop()" data-i18n="add_btn">Dodaj</button>
+              </div>
+            </div>
+            <div class="crop-badges" id="crop-badges"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label data-i18n="lbl_sowing_ed">Data siewu *</label>
+              <input id="f-sowing" type="date">
+            </div>
+            <div class="form-field">
+              <label data-i18n="lbl_harvest_ed">Data zbioru</label>
+              <input id="f-harvest" type="date">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="status-bar" class="status-bar"></div>
+
+    </div><!-- /panel-scroll -->
+
+    <div class="panel-footer">
+      <button class="btn-save" id="btn-save" onclick="saveField()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <span id="btn-save-text" data-i18n="save_new_btn">Zapisz nowe pole</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ═══ MAP ═══ -->
+  <div class="map-wrap">
+    <div class="map-tip" id="map-tip" data-i18n="map_tip">Klikaj wierzchołki pola — podwójne kliknięcie zamknie obrys</div>
+    <div class="map-badge" id="map-badge"></div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script>
+// ─── Auth ───
+const token = localStorage.getItem('bm_token');
+if (!token) { window.location.href = '/login'; }
+const username = localStorage.getItem('bm_username') || '–';
+const fullname = localStorage.getItem('bm_fullname') || username;
+document.getElementById('tb-user').textContent = username;
+document.getElementById('owner-nm').textContent = fullname;
+document.getElementById('owner-sub').textContent = username;
+document.getElementById('owner-av').textContent = (fullname[0] || '?').toUpperCase();
+
+initLang();
+
+function logout() {
+  ['bm_token','bm_role','bm_username','bm_fullname'].forEach(k => localStorage.removeItem(k));
+  window.location.href = '/login';
+}
+
+// ─── Mode ───
+let editingFieldId = null;
+const today = new Date().toISOString().slice(0, 10);
+document.getElementById('f-valid-from').value = today;
+document.getElementById('f-sowing').value = today;
+
+document.getElementById('f-valid-from').addEventListener('change', e => {
+  if (!document.getElementById('f-sowing').dataset.userSet)
+    document.getElementById('f-sowing').value = e.target.value;
+});
+document.getElementById('f-sowing').addEventListener('change', e => { e.target.dataset.userSet = '1'; });
+
+function setNewMode() {
+  editingFieldId = null;
+  document.getElementById('tb-title').textContent = t('editor_tb_new');
+  document.getElementById('tb-mode').textContent = t('mode_new');
+  document.getElementById('tb-mode').className = 'tb-mode';
+  document.getElementById('btn-save-text').textContent = t('save_new_btn');
+  document.getElementById('btn-save').classList.remove('edit-mode');
+  document.getElementById('edit-geom-hint').style.display = 'none';
+  document.getElementById('draw-hint').style.display = 'flex';
+  document.getElementById('geom-done').style.display = 'none';
+}
+
+function setEditMode(field) {
+  editingFieldId = field.field_id;
+  document.getElementById('tb-title').textContent = t('editor_tb_edit', field.name);
+  document.getElementById('tb-mode').textContent = t('mode_edit');
+  document.getElementById('tb-mode').className = 'tb-mode edit';
+  document.getElementById('btn-save-text').textContent = t('save_edit_btn');
+  document.getElementById('btn-save').classList.add('edit-mode');
+  document.getElementById('edit-geom-hint').style.display = 'block';
+  document.getElementById('draw-hint').style.display = 'none';
+  document.getElementById('geom-done').style.display = 'none';
+}
+
+function switchToNewMode() {
+  setNewMode();
+  clearPolygon();
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-notes').value = '';
+  document.getElementById('f-crop').value = '';
+  document.getElementById('f-sowing').value = today;
+  document.getElementById('f-sowing').dataset.userSet = '';
+  document.getElementById('f-harvest').value = '';
+  document.getElementById('f-valid-from').value = today;
+  document.querySelectorAll('.cbadge').forEach(b => b.classList.remove('sel'));
+  document.getElementById('crop-meta').textContent = '';
+  clearStatus();
+  document.querySelectorAll('.field-item').forEach(i => i.classList.remove('active'));
+}
+
+// ─── Accordion ───
+function toggleAcc(id) {
+  const wrap = document.getElementById(id);
+  const head = wrap.querySelector('.acc-head');
+  const body = wrap.querySelector('.acc-body');
+  const chev = head.querySelector('.acc-chevron');
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  head.classList.toggle('open', !isOpen);
+  chev.classList.toggle('open', !isOpen);
+}
+
+function openAcc(id) {
+  const wrap = document.getElementById(id);
+  const head = wrap.querySelector('.acc-head');
+  const body = wrap.querySelector('.acc-body');
+  const chev = head.querySelector('.acc-chevron');
+  body.classList.add('open'); head.classList.add('open'); chev.classList.add('open');
+}
+
+// ─── Map ───
+const map = L.map('map', { zoomControl: true }).setView([52.0, 19.5], 7);
+const satellite = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 20, attribution: '© Esri / Maxar' }
+).addTo(map);
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, attribution: '© OpenStreetMap' });
+L.control.layers({ 'Satelita (Esri)': satellite, 'Mapa (OSM)': osm }, {}, { position: 'topright', collapsed: false }).addTo(map);
+
+const drawnItems = new L.FeatureGroup().addTo(map);
+const editLayer  = new L.FeatureGroup().addTo(map);  // existing polygon (read-only display)
+
+const drawControl = new L.Control.Draw({
+  edit: { featureGroup: drawnItems, remove: false },
+  draw: {
+    polygon: {
+      allowIntersection: false, showArea: true,
+      shapeOptions: { color:'#2563eb', fillColor:'#2563eb', fillOpacity:.15, weight:2.5 },
+    },
+    polyline:false, rectangle:false, circle:false, circlemarker:false, marker:false,
+  },
+});
+map.addControl(drawControl);
+
+let currentGeoJSON = null;
+
+map.on(L.Draw.Event.DRAWSTART, () => document.getElementById('map-tip').classList.add('show'));
+map.on(L.Draw.Event.DRAWSTOP,  () => document.getElementById('map-tip').classList.remove('show'));
+
+map.on(L.Draw.Event.CREATED, e => {
+  drawnItems.clearLayers();
+  drawnItems.addLayer(e.layer);
+  currentGeoJSON = e.layer.toGeoJSON().geometry;
+  updateStats(e.layer);
+  document.getElementById('draw-hint').style.display = 'none';
+  document.getElementById('edit-geom-hint').style.display = 'none';
+  document.getElementById('geom-done').style.display = 'block';
+});
+map.on(L.Draw.Event.EDITED, e => {
+  e.layers.eachLayer(l => { currentGeoJSON = l.toGeoJSON().geometry; updateStats(l); });
+});
+
+function updateStats(layer) {
+  const ll = layer.getLatLngs()[0];
+  const area = geoArea(ll), perim = geoPerim(ll);
+  const aHa = (area/10000).toFixed(2);
+  document.getElementById('s-area').textContent  = aHa + ' ha';
+  document.getElementById('s-perim').textContent = Math.round(perim) + ' m';
+  document.getElementById('s-pts').textContent   = ll.length;
+  document.getElementById('geom-summary').textContent = `${aHa} ha · ${Math.round(perim)} m`;
+  document.getElementById('map-badge').textContent = aHa + ' ha';
+  document.getElementById('map-badge').classList.add('show');
+}
+
+function clearPolygon() {
+  drawnItems.clearLayers();
+  currentGeoJSON = null;
+  document.getElementById('geom-done').style.display = 'none';
+  document.getElementById('map-badge').classList.remove('show');
+  if (editingFieldId) {
+    document.getElementById('edit-geom-hint').style.display = 'block';
+  } else {
+    document.getElementById('draw-hint').style.display = 'flex';
+  }
+}
+
+function geoArea(ll) {
+  const R = 6378137, n = ll.length; let a = 0;
+  for (let i = 0; i < n; i++) {
+    const j=(i+1)%n;
+    a += (ll[i].lng*Math.PI/180)*Math.sin(ll[j].lat*Math.PI/180)
+       - (ll[j].lng*Math.PI/180)*Math.sin(ll[i].lat*Math.PI/180);
+  }
+  return Math.abs(a/2)*R*R;
+}
+function geoPerim(ll) {
+  const R = 6378137, n = ll.length; let d = 0;
+  for (let i = 0; i < n; i++) {
+    const j=(i+1)%n, a=ll[i], b=ll[j];
+    const dLat=(b.lat-a.lat)*Math.PI/180, dLng=(b.lng-a.lng)*Math.PI/180;
+    const x=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+    d += 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  }
+  return d;
+}
+
+map.locate({ setView: false });
+map.on('locationfound', e => {
+  map.setView(e.latlng, 14);
+  L.circleMarker(e.latlng, {radius:5,color:'#2563eb',fillColor:'#2563eb',fillOpacity:.7}).addTo(map);
+});
+
+// ─── Field list ───
+let allFields = [];
+
+async function loadFieldList() {
+  try {
+    const res = await fetch('/api/fields', { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) { allFields = await res.json(); renderFieldList(allFields); }
+  } catch(e) {}
+}
+
+function renderFieldList(fields) {
+  const meta = document.getElementById('fields-count-meta');
+  if (fields.length) {
+    meta.textContent = t('n_fields_db', fields.length);
+    meta.removeAttribute('data-i18n');
+  } else {
+    meta.textContent = t('loading_db');
+    meta.dataset.i18n = 'loading_db';
+  }
+  const wrap = document.getElementById('field-list-wrap');
+  if (!fields.length) {
+    wrap.innerHTML = `<div class="empty-list">${t('no_fields_db')}</div>`;
+    return;
+  }
+  wrap.innerHTML = fields.map(f => {
+    const areaHa = f.area ? (f.area/10000).toFixed(1) : '–';
+    const crop = f.crop ? escHtml(f.crop) : '<span style="color:var(--text-muted)">–</span>';
+    return `
+    <div class="field-item" id="fi-${f.id}" onclick="loadField(${f.id})">
+      <span class="field-item-id">#${f.id}</span>
+      <div class="field-item-main">
+        <div class="field-item-name">${escHtml(f.name)}</div>
+        <div class="field-item-sub">${crop} · ${f.created_at||'–'}</div>
+      </div>
+      <span class="field-item-area">${areaHa} ha</span>
+    </div>`;
+  }).join('');
+}
+
+function filterFieldList(q) {
+  const qLow = q.toLowerCase();
+  const filtered = allFields.filter(f =>
+    f.name.toLowerCase().includes(qLow) ||
+    String(f.id).includes(qLow) ||
+    (f.crop||'').toLowerCase().includes(qLow)
+  );
+  renderFieldList(filtered);
+}
+
+async function loadField(id) {
+  setStatus(t('status_loading'), 'info');
+  try {
+    const res = await fetch(`/api/fields/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(t('field_not_found'));
+    const d = await res.json();
+
+    // Mark active
+    document.querySelectorAll('.field-item').forEach(el => el.classList.remove('active'));
+    const fi = document.getElementById(`fi-${id}`);
+    if (fi) fi.classList.add('active');
+
+    // Fill form
+    document.getElementById('f-name').value       = d.name || '';
+    document.getElementById('f-notes').value      = d.notes || '';
+    document.getElementById('f-valid-from').value = d.owner_valid_from || today;
+    document.getElementById('f-sowing').value     = d.sowing_date || today;
+    document.getElementById('f-harvest').value    = d.harvest_date || '';
+    document.getElementById('f-sowing').dataset.userSet = '1';
+
+    // Crop
+    if (d.crop_name) {
+      let sel = document.getElementById('f-crop');
+      let found = false;
+      for (const opt of sel.options) { if (opt.value === d.crop_name) { found=true; break; } }
+      if (!found) { const opt = document.createElement('option'); opt.value=d.crop_name; opt.textContent=d.crop_name; sel.appendChild(opt); }
+      sel.value = d.crop_name;
+      document.getElementById('crop-meta').textContent = d.crop_name;
+      document.querySelectorAll('.cbadge').forEach(b => { b.classList.toggle('sel', b.dataset.name===d.crop_name); });
+    }
+
+    // Load polygon on map
+    editLayer.clearLayers();
+    drawnItems.clearLayers();
+    currentGeoJSON = null;
+    document.getElementById('map-badge').classList.remove('show');
+
+    if (d.geojson) {
+      const gj = L.geoJSON(d.geojson, {
+        style: { color:'#f59e0b', fillColor:'#f59e0b', fillOpacity:.12, weight:2, dashArray:'6 4' }
+      });
+      editLayer.addLayer(gj);
+      map.fitBounds(gj.getBounds(), { padding: [40, 40] });
+    } else if (d.lat && d.lng) {
+      map.setView([d.lat, d.lng], 14);
+    }
+
+    setEditMode(d);
+    // Open field data section, collapse list
+    openAcc('acc-field');
+    openAcc('acc-crop');
+    clearStatus();
+
+  } catch(err) {
+    setStatus(err.message, 'error');
+  }
+}
+
+// ─── Crops ───
+// Shortlist shown as quick-pick badges (first 10 from DB, alphabetical)
+const BADGE_LIMIT = 10;
+
+let cropsFromDB = [];
+
+async function loadCrops() {
+  try {
+    const res = await fetch('/api/crops', { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) cropsFromDB = await res.json();
+  } catch(e) {}
+  buildCropSelect();
+  buildCropBadges();
+}
+
+function buildCropSelect() {
+  const sel = document.getElementById('f-crop');
+  sel.innerHTML = `<option value="">${t('crop_select_default')}</option>`;
+  cropsFromDB.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.name; o.textContent = c.name; sel.appendChild(o);
+  });
+}
+
+function buildCropBadges() {
+  const badges = document.getElementById('crop-badges');
+  // Show first BADGE_LIMIT crops as quick-pick chips
+  badges.innerHTML = cropsFromDB.slice(0, BADGE_LIMIT).map(c =>
+    `<span class="cbadge" data-name="${escHtml(c.name)}" onclick="selectBadge(this,'${escapeSingleQ(c.name)}')">${escHtml(c.name)}</span>`
+  ).join('');
+}
+
+function selectBadge(el, name) {
+  document.querySelectorAll('.cbadge').forEach(b => b.classList.remove('sel'));
+  el.classList.add('sel');
+  ensureCropOption(name);
+  document.getElementById('f-crop').value = name;
+  document.getElementById('crop-meta').textContent = name;
+}
+
+function onCropSelect() {
+  const val = document.getElementById('f-crop').value;
+  document.getElementById('crop-meta').textContent = val;
+  document.querySelectorAll('.cbadge').forEach(b => b.classList.toggle('sel', b.dataset.name === val));
+}
+
+function ensureCropOption(name) {
+  const sel = document.getElementById('f-crop');
+  for (const o of sel.options) { if (o.value === name) return; }
+  const o = document.createElement('option'); o.value=name; o.textContent=name; sel.appendChild(o);
+}
+
+function toggleNewCrop() {
+  const row = document.getElementById('new-crop-row');
+  const showing = row.style.display !== 'none';
+  row.style.display = showing ? 'none' : 'block';
+  if (!showing) document.getElementById('f-crop-new').focus();
+}
+
+function addNewCrop() {
+  const val = document.getElementById('f-crop-new').value.trim();
+  if (!val) return;
+  ensureCropOption(val);
+  document.getElementById('f-crop').value = val;
+  document.getElementById('crop-meta').textContent = val;
+  document.getElementById('f-crop-new').value = '';
+  document.getElementById('new-crop-row').style.display = 'none';
+}
+
+// ─── Status / helpers ───
+function setStatus(msg, type) {
+  const el = document.getElementById('status-bar');
+  el.textContent = msg; el.className = `status-bar ${type} show`;
+}
+function clearStatus() { document.getElementById('status-bar').className = 'status-bar'; }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escapeSingleQ(s) { return String(s).replace(/'/g,"\\'"); }
+
+// ─── Save / Update ───
+async function saveField() {
+  clearStatus();
+  const name      = document.getElementById('f-name').value.trim();
+  const crop      = document.getElementById('f-crop').value.trim();
+  const validFrom = document.getElementById('f-valid-from').value;
+  const sowing    = document.getElementById('f-sowing').value;
+  const harvest   = document.getElementById('f-harvest').value || null;
+  const notes     = document.getElementById('f-notes').value.trim() || null;
+
+  // Validation
+  if (!name)   { setStatus(t('val_name'),    'error'); openAcc('acc-field'); return; }
+  if (!crop)   { setStatus(t('val_crop'),    'error'); openAcc('acc-crop');  return; }
+  if (!sowing) { setStatus(t('val_sowing'),  'error'); openAcc('acc-crop');  return; }
+
+  const isEdit = !!editingFieldId;
+  if (!isEdit && !currentGeoJSON) {
+    setStatus(t('val_polygon'), 'error'); return;
+  }
+
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  const savingTxt = isEdit ? t('saving_edit') : t('saving_new');
+  btn.innerHTML = `<span class="spin"></span><span>${savingTxt}</span>`;
+  setStatus(isEdit ? t('status_saving_edit') : t('status_saving_new'), 'info');
+
+  try {
+    let res, data;
+
+    if (isEdit) {
+      res = await fetch(`/api/fields/${editingFieldId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, crop_name:crop, sowing_date:sowing, harvest_date:harvest, notes, geojson: currentGeoJSON || null }),
+      });
+    } else {
+      if (!validFrom) { setStatus(t('val_owner_date'), 'error'); openAcc('acc-owner'); return; }
+      res = await fetch('/api/fields', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, geojson: currentGeoJSON, owner_valid_from:validFrom, crop_name:crop, sowing_date:sowing, notes }),
+      });
+    }
+
+    data = await res.json();
+    if (!res.ok) throw new Error(data.detail || t('err_save_field'));
+
+    // Success visual
+    drawnItems.eachLayer(l => l.setStyle({ color:'#059669', fillColor:'#059669', fillOpacity:.18 }));
+    editLayer.eachLayer(l => l.setStyle && l.setStyle({ color:'#059669', fillColor:'#059669', fillOpacity:.18 }));
+
+    setStatus(
+      isEdit
+        ? t('success_edit', editingFieldId)
+        : t('success_new', data.field_id, crop, (data.area_m2/10000).toFixed(2)),
+      'success'
+    );
+
+    // Refresh field list
+    await loadFieldList();
+
+    // If new – switch to edit mode on the created field
+    if (!isEdit && data.field_id) {
+      // brief pause then reload
+      setTimeout(() => loadField(data.field_id), 500);
+    }
+
+  } catch(err) {
+    setStatus(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    const txt = isEdit ? t('save_edit_btn') : t('save_new_btn');
+    btn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      <span id="btn-save-text">${txt}</span>`;
+  }
+}
+
+// ─── Lang change ───
+window.addEventListener('langchange', () => {
+  // Re-render field list with current data
+  if (allFields.length) renderFieldList(allFields);
+  // Rebuild crop select default option
+  const sel = document.getElementById('f-crop');
+  if (sel.options[0] && sel.options[0].value === '') {
+    sel.options[0].textContent = t('crop_select_default');
+  }
+  // Update topbar mode labels
+  if (editingFieldId) {
+    const title = document.getElementById('tb-title').textContent;
+    document.getElementById('tb-mode').textContent = t('mode_edit');
+    document.getElementById('btn-save-text') && (document.getElementById('btn-save-text').textContent = t('save_edit_btn'));
+  } else {
+    document.getElementById('tb-title').textContent = t('editor_tb_new');
+    document.getElementById('tb-mode').textContent = t('mode_new');
+    const bst = document.getElementById('btn-save-text');
+    if (bst) bst.textContent = t('save_new_btn');
+  }
+});
+
+// ─── Init ───
+loadCrops();
+loadFieldList();
+openAcc('acc-list');
+</script>
+</body>
+</html>

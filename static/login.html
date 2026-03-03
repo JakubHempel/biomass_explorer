@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pl" data-i18n-title="login_page_title">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logowanie – Biomass Explorer</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary: #2563eb; --primary-dark: #1d4ed8; --primary-light: #dbeafe;
+  --bg: #f0f4f8; --surface: #ffffff; --text: #1e293b;
+  --text-secondary: #64748b; --text-muted: #94a3b8;
+  --border: #e2e8f0; --border-input: #cbd5e0;
+  --error: #dc2626; --error-bg: #fef2f2;
+  --radius: 10px; --radius-lg: 14px;
+  --shadow-lg: 0 10px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--bg); min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text); -webkit-font-smoothing: antialiased;
+}
+.page-bg {
+  position: fixed; inset: 0;
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%); z-index: 0;
+}
+.page-bg::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 30% 40%, rgba(37,99,235,0.25) 0%, transparent 60%),
+              radial-gradient(ellipse at 70% 70%, rgba(16,185,129,0.15) 0%, transparent 55%);
+}
+.card {
+  position: relative; z-index: 1; background: var(--surface);
+  border-radius: 20px; box-shadow: var(--shadow-lg); width: 420px; padding: 44px 40px 40px;
+}
+.card-top { display: flex; justify-content: flex-end; margin-bottom: 24px; }
+.logo-row { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
+.logo-icon {
+  width: 48px; height: 48px; background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.logo-icon svg { color: #fff; }
+.logo-text h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
+.logo-text p  { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+.subtitle { color: var(--text-secondary); font-size: 14px; margin-bottom: 28px; }
+label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+input {
+  width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-input);
+  border-radius: var(--radius); font-size: 14px; font-family: inherit;
+  color: var(--text); background: #f8fafc; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.12); background: #fff; }
+.field { margin-bottom: 18px; }
+.btn {
+  width: 100%; padding: 11px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff; border: none; border-radius: var(--radius);
+  font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 6px;
+  transition: opacity .15s, transform .1s; letter-spacing: 0.2px;
+}
+.btn:hover { opacity: .93; transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.error-box {
+  background: var(--error-bg); border: 1px solid #fecaca; color: var(--error);
+  border-radius: var(--radius); padding: 10px 14px; font-size: 13px;
+  margin-bottom: 18px; display: none;
+}
+.spinner {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;
+  border-radius: 50%; animation: spin .6s linear infinite;
+  margin-right: 6px; vertical-align: -3px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+/* lang switcher */
+.lang-switch { display: flex; gap: 3px; }
+.lang-btn {
+  padding: 3px 5px; border-radius: 6px; border: 1.5px solid transparent;
+  cursor: pointer; font-size: 17px; background: none; line-height: 1;
+  transition: all .12s; opacity: .55;
+}
+.lang-btn:hover { opacity: 1; background: var(--bg); }
+.lang-btn.active { opacity: 1; border-color: var(--primary); background: var(--primary-light); }
+</style>
+<script src="/static/i18n.js"></script>
+</head>
+<body>
+<div class="page-bg"></div>
+<div class="card">
+  <div class="card-top">
+    <div class="lang-switch">
+      <button class="lang-btn" data-lang="pl" onclick="applyLang('pl')" title="Zmień na polski" data-i18n-title="lang_pl_title">🇵🇱</button>
+      <button class="lang-btn" data-lang="en" onclick="applyLang('en')" title="Switch to English" data-i18n-title="lang_en_title">🇬🇧</button>
+    </div>
+  </div>
+
+  <div class="logo-row">
+    <div class="logo-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+        <path d="M2 12h20"/>
+      </svg>
+    </div>
+    <div class="logo-text">
+      <h1>Biomass Explorer</h1>
+      <p>Crop monitoring from space</p>
+    </div>
+  </div>
+
+  <h2 data-i18n="login_h2">Zaloguj się</h2>
+  <p class="subtitle" data-i18n="login_subtitle">Panel administratora</p>
+
+  <div id="error-box" class="error-box"></div>
+
+  <form id="login-form" autocomplete="on">
+    <div class="field">
+      <label for="username" data-i18n="login_username">Nazwa użytkownika</label>
+      <input id="username" name="username" type="text" autocomplete="username"
+             placeholder="admin" required autofocus data-i18n-ph="ph_username">
+    </div>
+    <div class="field">
+      <label for="password" data-i18n="login_password">Hasło</label>
+      <input id="password" name="password" type="password" autocomplete="current-password"
+             placeholder="••••••••" required>
+    </div>
+    <button class="btn" type="submit" id="btn-login" data-i18n="login_btn">Zaloguj się</button>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const tok = localStorage.getItem('bm_token');
+    if (tok) window.location.href = '/admin';
+  })();
+
+  initLang();
+
+  const form     = document.getElementById('login-form');
+  const errorBox = document.getElementById('error-box');
+  const btn      = document.getElementById('btn-login');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span>${t('login_btn_loading')}`;
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const res  = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || t('login_error_default'));
+
+      localStorage.setItem('bm_token',    data.access_token);
+      localStorage.setItem('bm_role',     data.role);
+      localStorage.setItem('bm_username', data.username);
+      localStorage.setItem('bm_fullname', data.full_name || '');
+      window.location.href = '/admin';
+    } catch (err) {
+      errorBox.textContent  = err.message || t('login_error_default');
+      errorBox.style.display = 'block';
+      btn.disabled  = false;
+      btn.textContent = t('login_btn');
+    }
+  });
+</script>
+</body>
+</html>
