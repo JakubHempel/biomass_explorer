@@ -56,6 +56,8 @@ function toggleAboutPanel() {
 // =========================================================================
 const S2_INDICES = new Set(['NDVI','NDRE','GNDVI','EVI','SAVI','CIre','MTCI','IRECI','NDMI','NMDI']);
 const LS_INDICES = new Set(['LST','VSWI','TVDI','TCI','VHI']);
+const AUTO_ANALYSIS_INDICES = ['VHI', 'TCI', 'NDVI', 'NDMI', 'TVDI'];
+const FIELD_SCORE_CORE_INDICES = ['VHI', 'TCI', 'NDVI', 'NDMI', 'TVDI'];
 
 // =========================================================================
 //  INDEX METADATA  (short name, full name, formula, description, gradient, range)
@@ -76,6 +78,8 @@ const INDEX_INFO = {
     "TVDI":  { short: "TVDI",  full: "Temperature–Vegetation Dryness Index",        formula: "(LST − LSTmin) / (LSTmax − LSTmin)",                desc: "Spatial moisture pattern; 0 = wet surface, 1 = dry/stressed surface.",       gradient: "linear-gradient(to right, #2166ac, #67a9cf, #d1e5f0, #fddbc7, #ef8a62, #b2182b)",                                   range: ["0", "1"], chartColor: "#b2182b" },
     "TCI":   { short: "TCI",   full: "Temperature Condition Index",                 formula: "(LSTmax − LST) / (LSTmax − LSTmin) × 100",         desc: "Kogan (1995); 0 % = extreme heat stress, 100 % = cool optimal.",            gradient: "linear-gradient(to right, #d73027, #fc8d59, #fee08b, #d9ef8b, #66bd63, #1a9850)",                                   range: ["0", "100"], chartColor: "#fc8d59" },
     "VHI":   { short: "VHI",   full: "Vegetation Health Index",                     formula: "0.5 × VCI + 0.5 × TCI",                            desc: "Composite; <40 drought, 40–60 fair, >60 healthy vegetation.",               gradient: "linear-gradient(to right, #d73027, #fc8d59, #fee08b, #d9ef8b, #66bd63, #1a9850)",                                   range: ["0", "100"], chartColor: "#66bd63" },
+    "FIELD_CONDITION_MAP": { short: "Field Score", full: "Field Condition Score (Map)", formula: "Single score for the selected field (0–10)", desc: "Simple map view for non-technical users: the whole field is colored by the final condition score.", gradient: "linear-gradient(to right, #b91c1c, #ea580c, #eab308, #84cc16, #16a34a)", range: ["0 (Critical)", "10 (Healthy)"], chartColor: "#16a34a" },
+    "STRESS_HOTSPOTS": { short: "Stress", full: "Field Stress Hotspots",            formula: "Weighted stress from VHI, TCI, NDVI, NDMI, TVDI", desc: "Hotspot layer uses the same 5 stress signals as the field score and adapts contrast for better visibility within each field.",                                  gradient: "linear-gradient(to right, #e6f7ff, #7dd3fc, #22d3ee, #fde047, #f59e0b, #ef4444, #b91c1c)",                        range: ["Low", "High"], chartColor: "#ef4444" },
     "RGB":   { short: "RGB",   full: "True Color Composite",                       formula: "Red / Green / Blue",                                desc: "Natural-color satellite scene for visual reference.",                        gradient: "linear-gradient(to right, #000, #444, #888, #ccc, #fff)",                                                           range: ["Dark", "Bright"], isRGB: true }
 };
 
@@ -95,6 +99,13 @@ const INDEX_INFO_PL = {
     TVDI:  { full: "Temperaturowo-wegetacyjny indeks suchości", desc: "Rozkład wilgotności: 0 = mokro, 1 = sucho / stres." },
     TCI:   { full: "Indeks warunków termicznych", desc: "Wg Kogana (1995); 0% = skrajny stres cieplny, 100% = chłodno i optymalnie." },
     VHI:   { full: "Indeks zdrowia roślinności", desc: "Wskaźnik łączony; <40 susza, 40-60 stan umiarkowany, >60 dobra kondycja." },
+    FIELD_CONDITION_MAP: { full: "Ocena kondycji pola (mapa)", desc: "Prosta warstwa mapowa: cały obszar pola jest pokolorowany według końcowej oceny 0-10." },
+    STRESS_HOTSPOTS: {
+        short: "Stres",
+        full: "Mapa stref stresu na polu",
+        formula: "Ważony stres z VHI, TCI, NDVI, NDMI, TVDI",
+        desc: "Warstwa hotspotów używa tych samych 5 sygnałów stresu co wynik pola i automatycznie dopasowuje kontrast dla lepszej widoczności."
+    },
     RGB:   { full: "Kompozycja barw naturalnych", desc: "Naturalny obraz satelitarny do wizualnej interpretacji." }
 };
 
@@ -169,6 +180,7 @@ function evaluateCondition(idx, value) {
 
 function formatStatValue(idx, val) {
     if (val == null) return 'N/A';
+    if (idx === 'STRESS_HOTSPOTS') return (val * 100).toFixed(0) + ' %';
     if (idx === 'LST')  return val.toFixed(1) + ' °C';
     if (idx === 'TCI' || idx === 'VHI') return val.toFixed(1) + ' %';
     if (idx === 'VSWI') return val.toFixed(4);
@@ -228,9 +240,12 @@ const I18N = {
         field_name: 'Field Name',
         time_period: 'Time Period',
         date_to: 'to',
-        indices: 'Indices',
+        indices: 'Field Health Check',
         vegetation_growth: 'Vegetation & Growth',
         temp_drought: 'Temperature & Drought',
+        auto_indices_note: 'We automatically choose the best indicators and calculate one clear Field Condition Score. No technical setup needed.',
+        advanced_indices: 'Expert mode: choose indicators manually (optional)',
+        auto_indices_short: 'Automatic',
         select_all: 'select all',
         deselect_all: 'deselect all',
         area_interest: 'Area of Interest',
@@ -247,8 +262,57 @@ const I18N = {
         edit_boundary: 'EDIT BOUNDARY',
         save_boundary: 'SAVE BOUNDARY',
         save_boundary_hint: '(or double-click map)',
+        check_field_condition: 'CHECK FIELD CONDITION',
         search_images: 'SEARCH FOR IMAGES',
         results_overview: 'Results Overview',
+        field_condition_title: 'Field Condition Score',
+        field_condition_confidence: 'Confidence',
+        field_condition_damaged_area: 'Stress risk',
+        field_condition_stress_level: 'Stress level',
+        field_condition_drivers: 'Main focus areas',
+        field_condition_no_drivers: 'No major stress drivers detected.',
+        field_condition_conf_reason: 'Based on {obs} observations and {core} core indicators.',
+        field_condition_trend: 'Trend',
+        previous_period: 'previous period',
+        field_condition_msg_healthy: 'The field looks healthy in this period. Continue current management and monitor regularly.',
+        field_condition_msg_mostly: 'The field is mostly healthy, with minor stress signs in some indicators.',
+        field_condition_msg_watch: 'The field needs attention. Consider checking moisture and heat-stress areas.',
+        field_condition_msg_stressed: 'The field shows clear stress signals. A field visit is recommended soon.',
+        field_condition_msg_critical: 'The field condition is critical in this period. Immediate inspection is recommended.',
+        trend_improving: 'improving',
+        trend_worsening: 'worsening',
+        trend_stable: 'stable',
+        stress_level_low: 'Low',
+        stress_level_medium: 'Medium',
+        stress_level_high: 'High',
+        severity_high: 'high concern',
+        severity_moderate: 'moderate concern',
+        severity_watch: 'watch area',
+        driver_ndvi: 'Plant vigor',
+        driver_ndmi: 'Plant moisture',
+        driver_vhi: 'Overall crop health',
+        driver_tci: 'Heat stress',
+        driver_tvdi: 'Dryness risk',
+        driver_action_ndvi: 'Check uneven growth and stand density.',
+        driver_action_ndmi: 'Check soil moisture and irrigation.',
+        driver_action_vhi: 'Inspect overall crop stress in weaker zones.',
+        driver_action_tci: 'Watch heat stress and consider watering timing.',
+        driver_action_tvdi: 'Inspect dry patches and water availability.',
+        driver_action_default: 'Inspect this area in the field.',
+        show_stress_hotspots: 'SHOW STRESS HOTSPOTS ON MAP',
+        show_field_condition_map: 'SHOW FIELD SCORE ON MAP',
+        toast_no_hotspots: 'No recent data available to highlight stress hotspots.',
+        status_loading_hotspots: 'Preparing stress hotspot layers...',
+        status_hotspots_ready: 'Stress hotspot layers are ready on the map.',
+        status_loading_condition_map: 'Preparing field score map layer...',
+        status_condition_map_ready: 'Field score layer is ready on the map.',
+        label_healthy: 'Healthy',
+        label_mostly_healthy: 'Mostly healthy',
+        label_watch: 'Watch',
+        label_stressed: 'Stressed',
+        label_critical: 'Critical',
+        show_technical_indices: 'SHOW TECHNICAL INDICES',
+        hide_technical_indices: 'HIDE TECHNICAL INDICES',
         period_averages: 'Period Averages',
         period_avg: 'period avg',
         show_chart: 'SHOW TIME SERIES CHART',
@@ -273,7 +337,8 @@ const I18N = {
         optical: 'Optical',
         thermal: 'Thermal',
         dates_suffix: 'dates',
-        rgb_scene: 'RGB Scene',
+        rgb_scene: 'True Image',
+        stress_layer_name: 'Stress Layer',
         missing_data_title: 'Missing data for {missing} of {total} indices:',
         warning_s2_no_images: '<b>{names}</b> — no cloud-free <b>Sentinel-2</b> (optical) images found during this period.',
         warning_ls_no_images: '<b>{names}</b> — no cloud-free <b>Landsat 8/9</b> (thermal) images found. Thermal satellites revisit every 8–16 days.',
@@ -344,9 +409,12 @@ const I18N = {
         field_name: 'Nazwa pola',
         time_period: 'Zakres czasu',
         date_to: 'do',
-        indices: 'Indeksy',
+        indices: 'Ocena kondycji',
         vegetation_growth: 'Wegetacja i wzrost',
         temp_drought: 'Temperatura i susza',
+        auto_indices_note: 'Automatycznie dobieramy najlepsze wskaźniki i wyliczamy jedną, prostą ocenę kondycji pola. Nie musisz nic ustawiać.',
+        advanced_indices: 'Tryb ekspercki: ręczny wybór wskaźników (opcjonalnie)',
+        auto_indices_short: 'Automatyczna',
         select_all: 'zaznacz wszystko',
         deselect_all: 'odznacz wszystko',
         area_interest: 'Obszar analizy',
@@ -363,8 +431,57 @@ const I18N = {
         edit_boundary: 'EDYTUJ GRANICĘ',
         save_boundary: 'ZAPISZ GRANICĘ',
         save_boundary_hint: '(lub dwuklik na mapie)',
+        check_field_condition: 'SPRAWDŹ KONDYCJĘ POLA',
         search_images: 'SZUKAJ ZDJĘĆ',
         results_overview: 'Podsumowanie wyników',
+        field_condition_title: 'Ocena kondycji pola',
+        field_condition_confidence: 'Pewność oceny',
+        field_condition_damaged_area: 'Ryzyko stresu',
+        field_condition_stress_level: 'Poziom stresu',
+        field_condition_drivers: 'Najważniejsze obszary uwagi',
+        field_condition_no_drivers: 'Nie wykryto istotnych czynników stresu.',
+        field_condition_conf_reason: 'Na podstawie {obs} obserwacji i {core} kluczowych wskaźników.',
+        field_condition_trend: 'Trend',
+        previous_period: 'poprzedni okres',
+        field_condition_msg_healthy: 'Pole wygląda zdrowo w tym okresie. Utrzymaj obecne działania i monitoruj regularnie.',
+        field_condition_msg_mostly: 'Pole jest w większości w dobrej kondycji, ale widać drobne oznaki stresu.',
+        field_condition_msg_watch: 'Pole wymaga uwagi. Warto sprawdzić miejsca z ryzykiem niedoboru wody i stresu cieplnego.',
+        field_condition_msg_stressed: 'Na polu widać wyraźne sygnały stresu. Zalecana jest szybka kontrola w terenie.',
+        field_condition_msg_critical: 'Kondycja pola w tym okresie jest krytyczna. Zalecana jest pilna kontrola w terenie.',
+        trend_improving: 'poprawa',
+        trend_worsening: 'pogorszenie',
+        trend_stable: 'stabilnie',
+        stress_level_low: 'Niski',
+        stress_level_medium: 'Umiarkowany',
+        stress_level_high: 'Wysoki',
+        severity_high: 'wysoki priorytet',
+        severity_moderate: 'umiarkowany priorytet',
+        severity_watch: 'obszar do obserwacji',
+        driver_ndvi: 'Wigor roślin',
+        driver_ndmi: 'Uwodnienie roślin',
+        driver_vhi: 'Ogólna kondycja upraw',
+        driver_tci: 'Stres cieplny',
+        driver_tvdi: 'Ryzyko przesuszenia',
+        driver_action_ndvi: 'Sprawdź nierówny wzrost i zagęszczenie łanu.',
+        driver_action_ndmi: 'Sprawdź wilgotność gleby i nawadnianie.',
+        driver_action_vhi: 'Skontroluj ogólny stres upraw w słabszych strefach.',
+        driver_action_tci: 'Obserwuj stres cieplny i rozważ korektę terminu nawadniania.',
+        driver_action_tvdi: 'Sprawdź przesuszone miejsca i dostępność wody.',
+        driver_action_default: 'Sprawdź ten obszar bezpośrednio w polu.',
+        show_stress_hotspots: 'POKAŻ STREFY STRESU NA MAPIE',
+        show_field_condition_map: 'POKAŻ OCENĘ POLA NA MAPIE',
+        toast_no_hotspots: 'Brak świeżych danych do wskazania stref stresu.',
+        status_loading_hotspots: 'Przygotowywanie warstw stref stresu...',
+        status_hotspots_ready: 'Warstwy stref stresu są gotowe na mapie.',
+        status_loading_condition_map: 'Przygotowywanie warstwy oceny pola...',
+        status_condition_map_ready: 'Warstwa oceny pola jest gotowa na mapie.',
+        label_healthy: 'Zdrowe',
+        label_mostly_healthy: 'Raczej zdrowe',
+        label_watch: 'Do obserwacji',
+        label_stressed: 'W stresie',
+        label_critical: 'Krytyczne',
+        show_technical_indices: 'POKAŻ INDEKSY TECHNICZNE',
+        hide_technical_indices: 'UKRYJ INDEKSY TECHNICZNE',
         period_averages: 'Średnie z okresu',
         period_avg: 'śr. z okresu',
         show_chart: 'POKAŻ WYKRES CZASOWY',
@@ -389,7 +506,8 @@ const I18N = {
         optical: 'Optyczne',
         thermal: 'Termalne',
         dates_suffix: 'dat',
-        rgb_scene: 'Scena RGB',
+        rgb_scene: 'Obraz rzeczywisty',
+        stress_layer_name: 'Warstwa stresu',
         missing_data_title: 'Brak danych dla {missing} z {total} indeksów:',
         warning_s2_no_images: '<b>{names}</b> — nie znaleziono bezchmurnych obrazów <b>Sentinel-2</b> (optycznych) w tym okresie.',
         warning_ls_no_images: '<b>{names}</b> — nie znaleziono bezchmurnych obrazów <b>Landsat 8/9</b> (termalnych). Satelity termalne wracają co 8–16 dni.',
@@ -493,12 +611,14 @@ function applyStaticTranslations() {
     _setCardHeaderText('#setup-card h3', t('analysis_setup'));
     _setCardHeaderText('#result-card h3', t('results_overview'));
 
-    _setTextAfterIcon('.setup-section:nth-of-type(1) .setup-section-title', t('field_time'));
+    _setTextAfterIcon('.section-field-time .setup-section-title', t('field_time'));
     _setText('label[for="field_id"]', t('field_name'));
     _setText('label[for="start_date"]', t('time_period'));
     _setText('.date-sep', t('date_to'));
-    _setTextAfterIcon('.setup-section:nth-of-type(2) .setup-section-title', t('indices'));
-    _setTextAfterIcon('.setup-section:nth-of-type(3) .setup-section-title', t('area_interest'));
+    _setTextAfterIcon('.section-field-health .setup-section-title', t('indices'));
+    _setText('#auto-indices-note', t('auto_indices_note'));
+    _setText('#advanced-indices-summary', t('advanced_indices'));
+    _setTextAfterIcon('.section-aoi .setup-section-title', t('area_interest'));
 
     const idxHeaders = document.querySelectorAll('.idx-group-header label');
     if (idxHeaders[0] && idxHeaders[0].childNodes[0]) idxHeaders[0].childNodes[0].nodeValue = t('vegetation_growth') + ' ';
@@ -605,6 +725,7 @@ function applyStaticTranslations() {
     if (typeof refreshOverlayTranslations === 'function') refreshOverlayTranslations();
     // Refresh AOI/parcel dynamic panels.
     if (typeof refreshAoiTranslations === 'function') refreshAoiTranslations();
+    if (typeof updatePrimaryActionButtonLabel === 'function') updatePrimaryActionButtonLabel();
     // Refresh visible legend content after language change.
     if (typeof updateLegend === 'function') {
         const activeLegendTab = document.querySelector('.leg-tab.active');

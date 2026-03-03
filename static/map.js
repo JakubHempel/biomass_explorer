@@ -7,6 +7,11 @@ const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
 const map = L.map('map', { center: [52.0, 19.0], zoom: 7, maxZoom: 22, layers: [satellite] });
 const baseMaps = { satellite, osm };
 
+// Dedicated pane for analysis rasters so they always stay above basemaps.
+map.createPane('analysisPane');
+map.getPane('analysisPane').style.zIndex = 450;
+map.getPane('analysisPane').style.pointerEvents = 'none';
+
 L.control.scale({ metric: true, imperial: false }).addTo(map);
 const miniMap = new L.Control.MiniMap(L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'), { toggleDisplay: true, position: 'bottomleft' }).addTo(map);
 
@@ -55,6 +60,7 @@ let mapPickActive = false;
 // =========================================================================
 let lastAnalysisData = null;
 let lastRequestedIndices = [];
+let lastManualIndexSelection = false;
 
 // =========================================================================
 //  AOI TAB SWITCHING
@@ -242,9 +248,12 @@ function addOverlayToPanel(layer, idx, date, sensor) {
 
     const id = 'ol-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const info = (typeof getIndexInfo === 'function') ? getIndexInfo(idx) : INDEX_INFO[idx];
-    const displayName = info ? info.short : idx;
-    const sensorTag = sensor === 'Sentinel-2' ? 'S2' : 'L8/9';
+    const displayName = idx === 'STRESS_HOTSPOTS'
+        ? t('stress_layer_name')
+        : (info ? info.short : idx);
+    const sensorTag = sensor === 'Sentinel-2' ? 'S2' : (sensor === 'Landsat 8/9' ? 'L8/9' : '');
     const sensorCls = sensor === 'Sentinel-2' ? 's2' : 'ls';
+    const showSensorTag = !!sensorTag;
 
     const isRGB = (idx === 'RGB');
     const row = document.createElement('label');
@@ -252,41 +261,52 @@ function addOverlayToPanel(layer, idx, date, sensor) {
     row.setAttribute('for', id);
     row.dataset.idx = idx;
     row.dataset.date = date;
+    row.dataset.rawDate = date;
+    row.dataset.rangeDate = (date && date.indexOf('→') !== -1) ? '1' : '0';
 
     const rgbName = t('rgb_scene');
-    const label = (isRGB ? rgbName : displayName) + ' — ' + formatDate(date);
+    const dateLabel = row.dataset.rangeDate === '1' ? date : formatDate(date);
     row.innerHTML =
         '<input type="checkbox" id="' + id + '" class="lp-overlay-cb" data-layer-id="' + id + '">' +
         '<span class="lp-cb-mark"></span>' +
         '<span class="lp-overlay-info">' +
         '  <span class="lp-overlay-name">' + (isRGB ? rgbName : displayName) + '</span>' +
         '  <span class="lp-overlay-meta">' +
-        '    <span class="lp-sensor ' + sensorCls + '">' + sensorTag + '</span>' +
-        '    <span class="lp-date">' + formatDate(date) + '</span>' +
+        (showSensorTag ? ('    <span class="lp-sensor ' + sensorCls + '">' + sensorTag + '</span>') : '') +
+        '    <span class="lp-date">' + dateLabel + '</span>' +
         '  </span>' +
         '</span>';
 
     const cb = row.querySelector('input');
     cb.addEventListener('change', function() {
-        if (this.checked) { layer.addTo(map); }
+        if (this.checked) {
+            layer.addTo(map);
+            if (typeof layer.setZIndex === 'function') layer.setZIndex(1000);
+            if (typeof layer.bringToFront === 'function') layer.bringToFront();
+        }
         else              { map.removeLayer(layer); }
     });
 
     container.appendChild(row);
     updateLayerCount();
+    return cb;
 }
 
 function refreshOverlayTranslations() {
     document.querySelectorAll('.lp-overlay-row').forEach(function(row) {
         const idx = row.dataset.idx;
         const date = row.dataset.date;
+        const rawDate = row.dataset.rawDate || date;
+        const isRangeDate = row.dataset.rangeDate === '1';
         if (!idx || !date) return;
         const info = (typeof getIndexInfo === 'function') ? getIndexInfo(idx) : INDEX_INFO[idx];
-        const displayName = (idx === 'RGB') ? t('rgb_scene') : (info ? info.short : idx);
+        const displayName = (idx === 'RGB')
+            ? t('rgb_scene')
+            : (idx === 'STRESS_HOTSPOTS' ? t('stress_layer_name') : (info ? info.short : idx));
         const nameEl = row.querySelector('.lp-overlay-name');
         const dateEl = row.querySelector('.lp-date');
         if (nameEl) nameEl.textContent = displayName;
-        if (dateEl) dateEl.textContent = formatDate(date);
+        if (dateEl) dateEl.textContent = isRangeDate ? rawDate : formatDate(date);
     });
 }
 
@@ -328,13 +348,24 @@ function refreshAoiTranslations() {
 }
 
 function clearAllOverlays() {
-    activeLayers.forEach(l => map.removeLayer(l));
-    activeLayers = [];
-    document.getElementById('lp-overlays').innerHTML = '';
-    document.getElementById('lp-overlays-section').style.display = 'none';
-    document.getElementById('lp-opacity-section').style.display = 'none';
-    document.getElementById('legend-panel').style.display = 'none';
-    document.getElementById('legend-tabs').innerHTML = '';
+    activeLayers = activeLayers.filter(function(layer) {
+        if (layer && layer._persistentStress) return true;
+        map.removeLayer(layer);
+        return false;
+    });
+
+    const overlaysEl = document.getElementById('lp-overlays');
+    overlaysEl.querySelectorAll('.lp-overlay-row').forEach(function(row) {
+        if (row.dataset.persistentStress !== '1') row.remove();
+    });
+
+    const hasRows = overlaysEl.querySelectorAll('.lp-overlay-row').length > 0;
+    document.getElementById('lp-overlays-section').style.display = hasRows ? 'block' : 'none';
+    document.getElementById('lp-opacity-section').style.display = hasRows ? 'block' : 'none';
+    if (!hasRows) {
+        document.getElementById('legend-panel').style.display = 'none';
+        document.getElementById('legend-tabs').innerHTML = '';
+    }
     updateLayerCount();
 }
 
@@ -348,7 +379,19 @@ function updateLayerCount() {
 function setOverlayOpacity(val) {
     const opacity = val / 100;
     document.getElementById('lp-opacity-val').innerText = val + '%';
-    activeLayers.forEach(l => l.setOpacity(opacity));
+    activeLayers.forEach(function(l) {
+        if (typeof l.setOpacity === 'function') {
+            l.setOpacity(opacity);
+            return;
+        }
+        if (typeof l.setStyleByOpacity === 'function') {
+            l.setStyleByOpacity(opacity);
+            return;
+        }
+        if (typeof l.setStyle === 'function') {
+            l.setStyle({ opacity: Math.max(0.35, opacity), fillOpacity: Math.max(0, Math.min(0.85, opacity * 0.55)) });
+        }
+    });
 }
 
 // =========================================================================
@@ -399,16 +442,69 @@ function zoomToAOI() {
 //  LEGEND
 // =========================================================================
 function updateLegend(idx) {
+    if (idx === 'RGB') {
+        currentLegendIdx = null;
+        document.getElementById('legend-panel').style.display = 'none';
+        return;
+    }
     const info = (typeof getIndexInfo === 'function') ? getIndexInfo(idx) : INDEX_INFO[idx];
     if (!info) return;
     currentLegendIdx = idx;
+    const labelsEl = document.querySelector('.leg-labels');
+    const stepsEl = document.getElementById('leg-steps');
     document.getElementById('legend-panel').style.display = 'block';
     document.getElementById('full-name').innerText = info.full;
     document.getElementById('leg-formula').innerText = info.formula;
-    document.getElementById('leg-desc').innerText = info.desc;
+    let descText = info.desc;
+    if (idx === 'STRESS_HOTSPOTS') {
+        if (currentLang() === 'pl') {
+            descText += ' (0.0-0.2: Zdrowe, 0.2-0.4: W większości zdrowe, 0.4-0.6: Do obserwacji, 0.6-0.8: W stresie, 0.8-1.0: Krytyczne)';
+        } else {
+            descText += ' (0.0-0.2: Healthy, 0.2-0.4: Mostly healthy, 0.4-0.6: Watch, 0.6-0.8: Stressed, 0.8-1.0: Critical)';
+        }
+    } else if (idx === 'FIELD_CONDITION_MAP') {
+        if (currentLang() === 'pl') {
+            descText += ' (0.0-3.0: Krytyczne, 3.0-5.0: W stresie, 5.0-7.0: Do obserwacji, 7.0-8.5: W większości zdrowe, 8.5-10.0: Zdrowe)';
+        } else {
+            descText += ' (0.0-3.0: Critical, 3.0-5.0: Stressed, 5.0-7.0: Watch, 7.0-8.5: Mostly healthy, 8.5-10.0: Healthy)';
+        }
+    }
+    document.getElementById('leg-desc').innerText = descText;
     document.getElementById('leg-gradient').style.background = info.gradient;
-    document.getElementById('leg-min').innerText = info.range[0];
-    document.getElementById('leg-max').innerText = info.range[1];
+    if ((idx === 'STRESS_HOTSPOTS' || idx === 'FIELD_CONDITION_MAP') && stepsEl) {
+        labelsEl.style.display = 'grid';
+        labelsEl.classList.add('leg-labels-scale');
+        if (idx === 'STRESS_HOTSPOTS') {
+            labelsEl.innerHTML =
+                '<span>0.0</span>' +
+                '<span>0.2</span>' +
+                '<span>0.4</span>' +
+                '<span>0.6</span>' +
+                '<span>0.8</span>' +
+                '<span>1.0</span>';
+        } else {
+            labelsEl.innerHTML =
+                '<span>0.0</span>' +
+                '<span>3.0</span>' +
+                '<span>5.0</span>' +
+                '<span>7.0</span>' +
+                '<span>8.5</span>' +
+                '<span>10.0</span>';
+        }
+
+        stepsEl.style.display = 'none';
+        stepsEl.className = 'leg-steps';
+        stepsEl.innerHTML = '';
+    } else if (stepsEl) {
+        labelsEl.classList.remove('leg-labels-scale');
+        labelsEl.innerHTML = '<span id="leg-min"></span><span id="leg-max"></span>';
+        document.getElementById('leg-min').innerText = info.range[0];
+        document.getElementById('leg-max').innerText = info.range[1];
+        stepsEl.style.display = 'none';
+        stepsEl.className = 'leg-steps';
+        stepsEl.innerHTML = '';
+        labelsEl.style.display = 'flex';
+    }
     document.querySelectorAll('.leg-tab').forEach(t => t.classList.toggle('active', t.dataset.idx === idx));
 }
 

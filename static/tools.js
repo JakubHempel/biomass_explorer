@@ -2,7 +2,7 @@
 //  OVERLAY ADD → UPDATE LEGEND
 // =========================================================================
 map.on('layeradd', (e) => {
-    if (e.layer._idxKey) updateLegend(e.layer._idxKey);
+    if (e.layer._idxKey && e.layer._idxKey !== 'RGB') updateLegend(e.layer._idxKey);
 });
 
 // =========================================================================
@@ -145,8 +145,19 @@ function disablePixelInspector() {
 async function onPixelInspectClick(e) {
     const { lat, lng } = e.latlng;
 
-    // Find first visible non-RGB overlay layer to get date/sensor
-    const visibleLayer = activeLayers.find(l => l._idxKey !== 'RGB' && map.hasLayer(l));
+    // Prefer currently selected legend layer, then fallback to first visible queryable layer.
+    const preferredIdx = (typeof getCurrentLegendIndex === 'function') ? getCurrentLegendIndex() : null;
+    let visibleLayer = null;
+    if (preferredIdx) {
+        visibleLayer = activeLayers.find(l => l._idxKey === preferredIdx && l._idxKey !== 'RGB' && l._idxKey !== 'FIELD_CONDITION_MAP' && map.hasLayer(l));
+    }
+    if (!visibleLayer) {
+        visibleLayer = activeLayers.find(l => l._idxKey !== 'RGB' && l._idxKey !== 'FIELD_CONDITION_MAP' && map.hasLayer(l));
+    }
+    if (!visibleLayer) {
+        // Allow stress pixel query even when stress overlay checkbox is off.
+        visibleLayer = activeLayers.find(l => l._idxKey === 'STRESS_HOTSPOTS');
+    }
     if (!visibleLayer) {
         L.popup().setLatLng(e.latlng)
             .setContent('<div style="font-family:Inter,sans-serif;font-size:0.78rem;padding:4px;">' + (currentLang() === 'pl' ? 'Brak widocznej warstwy indeksu. Najpierw wczytaj i pokaż warstwę.' : 'No visible index layer. Load and show a layer first.') + '</div>')
@@ -156,11 +167,35 @@ async function onPixelInspectClick(e) {
 
     const date = visibleLayer._date;
     const sensor = visibleLayer._sensor;
-    const indices = lastRequestedIndices.filter(i => {
-        if (sensor === 'Sentinel-2') return S2_INDICES.has(i);
-        if (sensor === 'Landsat 8/9') return LS_INDICES.has(i);
-        return true;
-    });
+    const activeIdx = visibleLayer._idxKey;
+    const stressAvailable = activeLayers.some(l => l._idxKey === 'STRESS_HOTSPOTS');
+    const nonStressLayer = activeLayers.find(l =>
+        l._idxKey !== 'RGB' &&
+        l._idxKey !== 'FIELD_CONDITION_MAP' &&
+        l._idxKey !== 'STRESS_HOTSPOTS' &&
+        map.hasLayer(l)
+    );
+
+    const queryLayer = (activeIdx !== 'STRESS_HOTSPOTS' && activeIdx !== 'RGB' && activeIdx !== 'FIELD_CONDITION_MAP')
+        ? visibleLayer
+        : (nonStressLayer || visibleLayer);
+
+    const queryDate = queryLayer._date;
+    const querySensor = queryLayer._sensor;
+    let indices = [];
+    if (queryLayer._idxKey !== 'STRESS_HOTSPOTS') {
+        indices = lastRequestedIndices.filter(i => {
+            if (querySensor === 'Sentinel-2') return S2_INDICES.has(i);
+            if (querySensor === 'Landsat 8/9') return LS_INDICES.has(i);
+            return true;
+        });
+    }
+    if (stressAvailable && !indices.includes('STRESS_HOTSPOTS')) {
+        indices.push('STRESS_HOTSPOTS');
+    }
+    if (indices.length === 0 && activeIdx === 'STRESS_HOTSPOTS') {
+        indices = ['STRESS_HOTSPOTS'];
+    }
 
     if (!currentAOI || indices.length === 0) return;
 
@@ -187,22 +222,36 @@ async function onPixelInspectClick(e) {
     popup.on('remove', function() { map.off('zoomend', checkPixelPopupZoom); });
 
     try {
+        const rangeStart = document.getElementById('start_date') ? document.getElementById('start_date').value : '';
+        const rangeEnd = document.getElementById('end_date') ? document.getElementById('end_date').value : '';
         const res = await fetch(API_URL + '/api/pixel-value', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat, lng, date, sensor, indices, geojson: currentAOI, cloud_cover: 20 })
+            body: JSON.stringify({
+                lat, lng, date: queryDate, sensor: querySensor, indices, geojson: currentAOI, cloud_cover: 20,
+                start_date: indices.includes('STRESS_HOTSPOTS') ? rangeStart : null,
+                end_date: indices.includes('STRESS_HOTSPOTS') ? rangeEnd : null
+            })
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
+        const headerDateLabel = (indices.includes('STRESS_HOTSPOTS') && rangeStart && rangeEnd)
+            ? (rangeStart + ' → ' + rangeEnd)
+            : formatDate(queryDate);
 
         let html = '<div style="font-family:Inter,sans-serif;font-size:0.72rem;">';
-        html += '<div style="font-weight:700;margin-bottom:6px;color:#1e293b;">' + (currentLang() === 'pl' ? 'Wartości piksela' : 'Pixel Values') + ' — ' + formatDate(date) + '</div>';
+        html += '<div style="font-weight:700;margin-bottom:6px;color:#1e293b;">' + (currentLang() === 'pl' ? 'Wartości piksela' : 'Pixel Values') + ' — ' + headerDateLabel + '</div>';
         html += '<div style="font-size:0.64rem;color:#94a3b8;margin-bottom:6px;">' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '</div>';
 
         for (const [idx, val] of Object.entries(data.values)) {
             const info = INDEX_INFO[idx];
             const name = info ? info.short : idx;
-            const cond = evaluateCondition(idx, val);
+            let cond = evaluateCondition(idx, val);
+            if (idx === 'STRESS_HOTSPOTS') {
+                if (val >= 0.75) cond = { label: currentLang() === 'pl' ? 'Wysoki' : 'High', cls: 'cond-critical' };
+                else if (val >= 0.45) cond = { label: currentLang() === 'pl' ? 'Umiarkowany' : 'Moderate', cls: 'cond-poor' };
+                else cond = { label: currentLang() === 'pl' ? 'Niski' : 'Low', cls: 'cond-good' };
+            }
             html += '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #f1f5f9;">';
             html += '<span style="font-weight:600;color:#475569;">' + name + '</span>';
             html += '<span style="font-family:JetBrains Mono,monospace;font-weight:700;">' + formatStatValue(idx, val) + ' <span style="color:' + (cond.cls === 'cond-excellent' ? '#059669' : cond.cls === 'cond-good' ? '#16a34a' : cond.cls === 'cond-fair' ? '#ca8a04' : cond.cls === 'cond-poor' ? '#ea580c' : '#dc2626') + ';font-size:0.6rem;">' + cond.label + '</span></span>';
