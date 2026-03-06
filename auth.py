@@ -124,6 +124,29 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> UserRecord:
     return _row_to_user(row)
 
 
+def get_current_user_optional(token: str = Depends(oauth2_scheme)) -> Optional[UserRecord]:
+    """Return authenticated user or None when token is missing/invalid."""
+    if not token:
+        return None
+    payload = _decode_token(token)
+    if payload is None:
+        return None
+    username: str = payload.get("sub")
+    if not username:
+        return None
+
+    with database.pg_cursor() as cur:
+        cur.execute(
+            _SELECT + " WHERE username = %s AND is_active = TRUE",
+            (username,),
+        )
+        row = cur.fetchone()
+
+    if row is None:
+        return None
+    return _row_to_user(row)
+
+
 def require_admin(current_user: UserRecord = Depends(get_current_user)) -> UserRecord:
     if current_user.role != "admin":
         raise HTTPException(

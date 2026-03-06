@@ -22,7 +22,7 @@
   --radius:10px;--radius-lg:14px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.08);
   --shadow-md:0 4px 16px rgba(0,0,0,.10);
-  --topbar:var(--topbar-h);--panel:380px;
+  --topbar:var(--topbar-h);--panel:460px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',sans-serif;font-size:14px;color:var(--text);background:var(--bg);height:100vh;overflow:hidden}
@@ -119,8 +119,17 @@ select.filter-sel:focus{border-color:var(--primary)}
 .crop-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;
   font-size:12px;font-weight:600;background:#fef9c3;color:#854d0e;border:1px solid #fde68a}
 .detail-actions{display:flex;gap:8px;padding:0 0 4px}
+.detail-actions{flex-wrap:wrap}
 .detail-actions .btn{flex:1;justify-content:center}
 .detail-actions a.btn{text-decoration:none}
+.detail-actions .btn-history{
+  flex:1 0 100%;
+  width:100%;
+  min-height:30px;
+  padding:6px 10px;
+  font-size:12px;
+  font-weight:600;
+}
 .btn{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
   display:inline-flex;align-items:center;gap:5px;transition:all .15s;border:none}
 .btn-primary{background:var(--primary);color:#fff}
@@ -174,6 +183,15 @@ body.dark-mode .legend-item{color:#e2e8f0}
   font-size:13px;font-weight:500;opacity:0;transition:all .3s;z-index:9999;white-space:nowrap}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.error{background:var(--danger)}
+
+.history-wrap{display:flex;flex-direction:column;gap:10px}
+.history-meta{font-size:12px;color:var(--text-muted)}
+.history-table-wrap{overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.history-table{width:100%;border-collapse:collapse;min-width:1700px}
+.history-table th,.history-table td{padding:7px 8px;border-bottom:1px solid var(--border);font-size:12px;text-align:left}
+.history-table th{position:sticky;top:0;background:var(--surface2);z-index:1;color:var(--text-muted);font-weight:700}
+.history-table tbody tr:last-child td{border-bottom:none}
+.history-empty{font-size:12px;color:var(--text-muted);padding:8px 2px}
 </style>
 </head>
 <body>
@@ -408,6 +426,7 @@ let visibleFieldIds = new Set();
 const DOT_LOW_ZOOM_MAX = 12;
 let listPage = 1;
 const LIST_PAGE_SIZE = 20;
+const fieldHistoryCache = {};
 
 // ── API helpers ───────────────────────────────────────────────────────────
 const hdrs = () => ({ 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' });
@@ -669,7 +688,9 @@ function renderList(fields) {
   el.innerHTML = pageRows.map(f => {
     const color = ownerColor(f.owner_id);
     const area  = f.area_ha ? `${f.area_ha.toFixed(2)} ha` : '';
-    const sub   = [f.owner_name, f.crop].filter(Boolean).join(' · ');
+    const calcCount = Number.isFinite(Number(f.calc_count)) ? Number(f.calc_count) : 0;
+    const historyLabel = (isPolishUi() ? 'Historia' : 'History') + ': ' + calcCount;
+    const sub = [f.owner_name, f.crop, historyLabel].filter(Boolean).join(' · ');
     return `<div class="field-item${f.id===activeId?' active':''}" onclick="selectField(${f.id})" id="li-${f.id}">
       <div class="field-dot" style="background:${color}"></div>
       <div class="field-info">
@@ -745,8 +766,13 @@ function showDetail(f) {
   const area     = f.area_ha ? `${f.area_ha.toFixed(4)} ha` : '–';
   const lat      = f.lat ? f.lat.toFixed(5) : '–';
   const lng      = f.lng ? f.lng.toFixed(5) : '–';
+  const calcCount = Number.isFinite(Number(f.calc_count)) ? Number(f.calc_count) : 0;
+  const lastCalc  = f.last_calculated_at ? String(f.last_calculated_at) : '–';
   const mapsLink = f.lat && f.lng ? `https://maps.google.com/?q=${f.lat},${f.lng}` : '#';
   const explorerLink = `/app?field_id=${f.id}`;
+  const historyBtnLabel = isPolishUi() ? 'Pokaż historię analiz' : 'Show calculation history';
+  const historyTitle = isPolishUi() ? 'Historia analiz' : 'Calculation history';
+  const historyCountLabel = isPolishUi() ? 'Liczba zapisów' : 'Records';
 
   document.getElementById('detail-body').innerHTML = `
     <!-- Owner -->
@@ -799,6 +825,14 @@ function showDetail(f) {
           <div class="detail-kv-label">${t('lbl_longitude')}</div>
           <div class="detail-kv-val">${lng}</div>
         </div>
+        <div class="detail-kv">
+          <div class="detail-kv-label">${isPolishUi() ? 'Liczba analiz' : 'Analyses count'}</div>
+          <div class="detail-kv-val">${calcCount}</div>
+        </div>
+        <div class="detail-kv">
+          <div class="detail-kv-label">${isPolishUi() ? 'Ostatnia analiza' : 'Last analysis'}</div>
+          <div class="detail-kv-val">${escHtml(lastCalc)}</div>
+        </div>
       </div>
     </div>
 
@@ -812,8 +846,128 @@ function showDetail(f) {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/></svg>
         ${t('google_maps')}
       </a>
+      <button type="button" class="btn btn-ghost btn-history" id="detail-history-btn" onclick="toggleFieldHistory(${f.id})">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 3"/></svg>
+        <span id="detail-history-btn-label">${historyBtnLabel}</span>
+      </button>
+    </div>
+
+    <div class="detail-section" id="detail-history-panel" style="display:none">
+      <div class="detail-section-title">${historyTitle}</div>
+      <div class="history-wrap">
+        <div class="history-meta">${historyCountLabel}: ${calcCount}</div>
+        <div id="detail-history-content" class="history-empty">—</div>
+      </div>
     </div>
   `;
+}
+
+function _historyLabel(showing) {
+  if (isPolishUi()) return showing ? 'Ukryj historię analiz' : 'Pokaż historię analiz';
+  return showing ? 'Hide calculation history' : 'Show calculation history';
+}
+
+function _fmtHistNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(4) : '—';
+}
+
+function _historySortKey(item) {
+  const a = item && (item.captured_at || item.date);
+  if (!a) return 0;
+  const t = Date.parse(String(a));
+  return Number.isFinite(t) ? t : 0;
+}
+
+function _renderHistoryTable(records) {
+  if (!Array.isArray(records) || records.length === 0) {
+    return `<div class="history-empty">${isPolishUi() ? 'Brak zapisanej historii dla tego pola.' : 'No saved history for this field.'}</div>`;
+  }
+  const rows = records.slice().sort((a, b) => _historySortKey(b) - _historySortKey(a));
+  return `
+    <div class="history-table-wrap">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>${isPolishUi() ? 'Data' : 'Date'}</th>
+            <th>${isPolishUi() ? 'Sensor' : 'Sensor'}</th>
+            <th>NDVI</th>
+            <th>NDRE</th>
+            <th>GNDVI</th>
+            <th>EVI</th>
+            <th>SAVI</th>
+            <th>CIre</th>
+            <th>MTCI</th>
+            <th>IRECI</th>
+            <th>NDMI</th>
+            <th>NMDI</th>
+            <th>LST</th>
+            <th>VSWI</th>
+            <th>TVDI</th>
+            <th>TCI</th>
+            <th>VHI</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${escHtml(r.date || r.captured_at || '—')}</td>
+              <td>${escHtml(r.sensor || '—')}</td>
+              <td>${_fmtHistNum(r.ndvi)}</td>
+              <td>${_fmtHistNum(r.ndre)}</td>
+              <td>${_fmtHistNum(r.gndvi)}</td>
+              <td>${_fmtHistNum(r.evi)}</td>
+              <td>${_fmtHistNum(r.savi)}</td>
+              <td>${_fmtHistNum(r.cire)}</td>
+              <td>${_fmtHistNum(r.mtci)}</td>
+              <td>${_fmtHistNum(r.ireci)}</td>
+              <td>${_fmtHistNum(r.ndmi)}</td>
+              <td>${_fmtHistNum(r.nmdi)}</td>
+              <td>${_fmtHistNum(r.lst)}</td>
+              <td>${_fmtHistNum(r.vswi)}</td>
+              <td>${_fmtHistNum(r.tvdi)}</td>
+              <td>${_fmtHistNum(r.tci)}</td>
+              <td>${_fmtHistNum(r.vhi)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function toggleFieldHistory(fieldId) {
+  const panel = document.getElementById('detail-history-panel');
+  const content = document.getElementById('detail-history-content');
+  const btn = document.getElementById('detail-history-btn');
+  const label = document.getElementById('detail-history-btn-label');
+  if (!panel || !content || !btn || !label) return;
+
+  const isOpen = panel.style.display !== 'none';
+  if (isOpen) {
+    panel.style.display = 'none';
+    label.textContent = _historyLabel(false);
+    return;
+  }
+
+  panel.style.display = '';
+  label.textContent = _historyLabel(true);
+
+  if (fieldHistoryCache[fieldId]) {
+    content.innerHTML = _renderHistoryTable(fieldHistoryCache[fieldId]);
+    return;
+  }
+
+  content.innerHTML = `<div class="history-empty">${isPolishUi() ? 'Ładowanie historii…' : 'Loading history…'}</div>`;
+  try {
+    const res = await fetch('/history/' + fieldId, { headers: hdrs() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const records = await res.json();
+    fieldHistoryCache[fieldId] = Array.isArray(records) ? records : [];
+    content.innerHTML = _renderHistoryTable(fieldHistoryCache[fieldId]);
+  } catch (e) {
+    content.innerHTML = `<div class="history-empty">${isPolishUi() ? 'Nie udało się pobrać historii.' : 'Failed to load history.'}</div>`;
+  }
 }
 
 function showList() {
@@ -900,6 +1054,13 @@ function formatDate(s) {
   const d = new Date(s);
   if (isNaN(d)) return s;
   return d.toLocaleDateString('pl-PL', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function isPolishUi() {
+  if (typeof getCurrentLang === 'function') {
+    return getCurrentLang() === 'pl';
+  }
+  return (document.documentElement.lang || 'pl') === 'pl';
 }
 
 // ── Lang change ───────────────────────────────────────────────────────────

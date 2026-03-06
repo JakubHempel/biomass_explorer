@@ -633,7 +633,9 @@ def list_fields_full(owner_email: Optional[str] = None) -> list[dict]:
                     o.name          AS owner_name,
                     o.email         AS owner_email,
                     round((COALESCE(fg_cur.area_m2, fg_legacy.area)::numeric / 10000.0), 4) AS area_ha,
-                    ST_AsGeoJSON(COALESCE(fg_cur.geom, fg_legacy.geom)) AS geojson
+                    ST_AsGeoJSON(COALESCE(fg_cur.geom, fg_legacy.geom)) AS geojson,
+                    COALESCE(vi_hist.calc_count, 0) AS calc_count,
+                    to_char(vi_hist.last_captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS last_calculated_at
                 FROM core.fields f
                 LEFT JOIN geo.fields_location fl ON fl.field_id = f.id
                 LEFT JOIN agro.field_crops fc
@@ -656,6 +658,13 @@ def list_fields_full(owner_email: Optional[str] = None) -> list[dict]:
                     SELECT geom, area FROM stg.field_geom
                     WHERE base_id = f.id ORDER BY id DESC LIMIT 1
                 ) fg_legacy ON true
+                LEFT JOIN LATERAL (
+                    SELECT
+                        COUNT(*)::int AS calc_count,
+                        MAX(captured_at) AS last_captured_at
+                    FROM obs.vegetation_indices vi
+                    WHERE vi.field_id = f.id
+                ) vi_hist ON true
                 {where}
                 ORDER BY f.name
                 LIMIT 500
@@ -671,6 +680,8 @@ def list_fields_full(owner_email: Optional[str] = None) -> list[dict]:
                     d["geojson"] = _json.loads(d["geojson"])
                 if d.get("area_ha") is not None:
                     d["area_ha"] = float(d["area_ha"])
+                if d.get("calc_count") is not None:
+                    d["calc_count"] = int(d["calc_count"])
                 rows.append(d)
             return rows
     finally:
@@ -725,7 +736,9 @@ def list_fields_from_pg(owner_email: Optional[str] = None) -> list[dict]:
                     fl.lng,
                     c.name AS crop,
                     fc.sowing_date,
-                    round((COALESCE(fg_cur.area_m2, fg_legacy.area)::numeric / 10000.0), 4) AS area_ha
+                    round((COALESCE(fg_cur.area_m2, fg_legacy.area)::numeric / 10000.0), 4) AS area_ha,
+                    COALESCE(vi_hist.calc_count, 0) AS calc_count,
+                    to_char(vi_hist.last_captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS last_calculated_at
                 FROM core.fields f
                 LEFT JOIN geo.fields_location fl ON fl.field_id = f.id
                 LEFT JOIN agro.field_crops fc ON fc.field_id = f.id AND fc.is_current = TRUE
@@ -741,6 +754,13 @@ def list_fields_from_pg(owner_email: Optional[str] = None) -> list[dict]:
                     SELECT geom, area FROM stg.field_geom
                     WHERE base_id = f.id ORDER BY id DESC LIMIT 1
                 ) fg_legacy ON true
+                LEFT JOIN LATERAL (
+                    SELECT
+                        COUNT(*)::int AS calc_count,
+                        MAX(captured_at) AS last_captured_at
+                    FROM obs.vegetation_indices vi
+                    WHERE vi.field_id = f.id
+                ) vi_hist ON true
                 {where}
                 ORDER BY f.created_at DESC
                 LIMIT 200
@@ -755,6 +775,8 @@ def list_fields_from_pg(owner_email: Optional[str] = None) -> list[dict]:
                     d["sowing_date"] = d["sowing_date"].isoformat()
                 if d.get("area_ha") is not None:
                     d["area_ha"] = float(d["area_ha"])
+                if d.get("calc_count") is not None:
+                    d["calc_count"] = int(d["calc_count"])
                 rows.append(d)
             return rows
     finally:

@@ -23,7 +23,7 @@
   --warning:#f59e0b;--warning-bg:#fffbeb;
   --radius:9px;--radius-lg:13px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.06);
-  --panel:380px;
+  --panel:460px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:'Inter',-apple-system,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;overflow:hidden}
@@ -773,7 +773,10 @@ function renderFieldList(fields) {
     return;
   }
   wrap.innerHTML = fields.map(f => {
-    const areaHa = f.area ? (f.area/10000).toFixed(1) : '–';
+    const areaHaNum = Number.isFinite(Number(f.area_ha))
+      ? Number(f.area_ha)
+      : (Number.isFinite(Number(f.area)) ? Number(f.area) / 10000 : null);
+    const areaLabel = areaHaNum == null ? '–' : (areaHaNum.toFixed(1) + ' ha');
     const crop = f.crop ? escHtml(f.crop) : '<span style="color:var(--text-muted)">–</span>';
     return `
     <div class="field-item" id="fi-${f.id}" onclick="loadField(${f.id})">
@@ -782,7 +785,7 @@ function renderFieldList(fields) {
         <div class="field-item-name">${escHtml(f.name)}</div>
         <div class="field-item-sub">${crop} · ${f.created_at||'–'}</div>
       </div>
-      <span class="field-item-area">${areaHa} ha</span>
+      <span class="field-item-area">${areaLabel}</span>
     </div>`;
   }).join('');
 }

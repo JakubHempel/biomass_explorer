@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from contextlib import asynccontextmanager
+from typing import Optional
 import os
 import logging
 
@@ -78,25 +79,46 @@ async def favicon():
 # --- API Endpoints ---
 
 @app.post("/calculate/biomass", response_model=schemas.BiomassResponse)
-async def calculate_biomass_endpoint(request: schemas.AnalysisRequest):
+async def calculate_biomass_endpoint(
+    request: schemas.AnalysisRequest,
+    current_user: Optional[auth.UserRecord] = Depends(auth.get_current_user_optional),
+):
     try:
         result = services.calculate_biomass_logic(request)
-        if database.DATABASE_ENABLED:
+        # Guests can run analysis but only authenticated owners can persist.
+        if database.DATABASE_ENABLED and current_user is not None:
+            try:
+                field_id_num = int(request.field_id)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Authenticated persistence requires numeric field_id.",
+                )
+            _assert_field_access(field_id_num, current_user)
             services.save_results_to_db(result)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/history/{field_id}")
-async def get_history(field_id: str):
+async def get_history(
+    field_id: str,
+    current_user: Optional[auth.UserRecord] = Depends(auth.get_current_user_optional),
+):
     if not database.DATABASE_ENABLED:
+        return []
+    # Guests have no persisted personal history.
+    if current_user is None:
         return []
     try:
         field_id_num = int(field_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="field_id must be numeric.")
+    _assert_field_access(field_id_num, current_user)
     try:
         return services.get_history_from_db(field_id_num)
     except Exception as e:

@@ -84,6 +84,10 @@ function switchAoiTab(tab) {
 // =========================================================================
 function setAOI(geojson, info) {
     currentAOI = geojson;
+    const fieldInput = document.getElementById('field_id');
+    if (fieldInput && fieldInput.dataset.fieldId) {
+        delete fieldInput.dataset.fieldId;
+    }
     if (aoiLayer) map.removeLayer(aoiLayer);
     aoiLayer = L.geoJSON(geojson, {
         style: { color: "#ffffff", weight: 3, fillOpacity: 0.05, dashArray: "8, 8" }
@@ -757,7 +761,11 @@ async function renderSavedFields() {
         html += '<div class="sfd-section-label">' + sectionLabel + '</div>';
         html += dbFields.map((f, i) => {
             const area = f.area_ha ? f.area_ha.toFixed(2) + ' ha' : '';
-            const sub  = [f.owner_name, f.crop].filter(Boolean).join(' · ');
+            const baseParts = [f.owner_name, f.crop].filter(Boolean);
+            const calcCount = Number.isFinite(Number(f.calc_count)) ? Number(f.calc_count) : 0;
+            const historyLabel = (pl ? 'Historia' : 'History') + ': ' + calcCount;
+            const subParts = baseParts.concat([historyLabel]);
+            const sub = subParts.join(' · ');
             return '<div class="saved-field-item sfd-db-item" onclick="loadDbField(' + f.id + ',\'' + escSq(f.name) + '\')">'
                  + '  <div style="min-width:0">'
                  + '    <span class="saved-field-name">' + escHtmlSf(f.name) + '</span>'
@@ -796,6 +804,8 @@ async function loadDbField(id, name) {
                 lastAoiStatusData = { type: 'saved', name: name, info: null };
                 showAoiStatus(lastAoiStatusData);
             }
+            const fieldInput = document.getElementById('field_id');
+            if (fieldInput) fieldInput.dataset.fieldId = String(id);
         }
     } catch (_) {}
 }

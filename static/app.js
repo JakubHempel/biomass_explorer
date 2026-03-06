@@ -4,6 +4,29 @@
 let setupCardOpen = true;
 let persistentStressLayer = null;
 
+function _getSelectedFieldIdFromInput() {
+    const fieldInput = document.getElementById('field_id');
+    if (!fieldInput) return null;
+    const raw = fieldInput.dataset.fieldId;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.trunc(parsed);
+}
+
+function _analysisFieldIdPayload() {
+    const selectedId = _getSelectedFieldIdFromInput();
+    if (selectedId !== null) return String(selectedId);
+    const fieldInput = document.getElementById('field_id');
+    return fieldInput ? fieldInput.value.trim() : '';
+}
+
+function _authHeaders(baseHeaders) {
+    const headers = Object.assign({}, baseHeaders || {});
+    const token = localStorage.getItem('bm_token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+    return headers;
+}
+
 function clearPersistentStressLayer() {
     if (persistentStressLayer && map && map.hasLayer(persistentStressLayer)) {
         map.removeLayer(persistentStressLayer);
@@ -129,7 +152,9 @@ function _dateOnly(s) {
 
 async function fetchTrendInfo(fieldId, startDate, endDate, currentScore) {
     try {
-        const res = await fetch(API_URL + '/history/' + encodeURIComponent(fieldId));
+        const res = await fetch(API_URL + '/history/' + encodeURIComponent(fieldId), {
+            headers: _authHeaders()
+        });
         if (!res.ok) return null;
         const records = await res.json();
         if (!Array.isArray(records) || records.length === 0) return null;
@@ -703,8 +728,9 @@ async function startAnalysis() {
     if (!fieldInput.value.trim()) {
         const counter = localStorage.getItem('biomass_field_counter') || '1';
         fieldInput.value = (currentLang() === 'pl' ? 'Pole_' : 'Field_') + counter;
+        delete fieldInput.dataset.fieldId;
     }
-    const field_id = fieldInput.value.trim();
+    const field_id = _analysisFieldIdPayload();
     const start    = document.getElementById('start_date').value;
     const end      = document.getElementById('end_date').value;
     const manualIndices = getManualSelectedIndices();
@@ -748,7 +774,7 @@ async function startAnalysis() {
         const t0 = performance.now();
         const res = await fetch(API_URL + '/calculate/biomass', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(currentQuery)
         });
 
@@ -840,7 +866,7 @@ async function startAnalysis() {
 }
 
 async function showStressHotspotsOnMap() {
-    const fieldId = (document.getElementById('field_id').value || 'field').trim() || 'field';
+    const fieldId = _analysisFieldIdPayload() || 'field';
     const start = document.getElementById('start_date').value;
     const end = document.getElementById('end_date').value;
     await refreshPersistentStressLayer(fieldId, start, end);
@@ -1424,7 +1450,10 @@ async function initFieldFromQuery() {
 
         if (field.name) {
             const fieldInput = document.getElementById('field_id');
-            if (fieldInput) fieldInput.value = field.name;
+            if (fieldInput) {
+                fieldInput.value = field.name;
+                fieldInput.dataset.fieldId = String(fieldId);
+            }
         }
 
         // Show DB-restore confirmation in AOI segment immediately.
@@ -1441,6 +1470,8 @@ async function initFieldFromQuery() {
 
         if (field.geojson) {
             setAOI(field.geojson, null);
+            const fieldInput = document.getElementById('field_id');
+            if (fieldInput) fieldInput.dataset.fieldId = String(fieldId);
             // Deep-link UX: when opening a field from list/admin, always land at fixed detail zoom.
             try {
                 let targetCenter = null;
@@ -1498,10 +1529,21 @@ async function initFieldFromQuery() {
     }
 }
 
+function initFieldIdBinding() {
+    const fieldInput = document.getElementById('field_id');
+    if (!fieldInput) return;
+    fieldInput.addEventListener('input', function() {
+        if (fieldInput.dataset.fieldId) {
+            delete fieldInput.dataset.fieldId;
+        }
+    });
+}
+
 // Auto-start tour on first visit only
 (function checkOnboarding() {
     initSetupSections();
     initWelcomePanel();
+    initFieldIdBinding();
     initFieldFromQuery();
     const welcomeDone = localStorage.getItem('biomass_welcome_done');
     const tourDone = localStorage.getItem('biomass_tour_done');
