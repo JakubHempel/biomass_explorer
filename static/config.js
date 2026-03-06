@@ -224,7 +224,7 @@ const I18N = {
         tour_setup_title: 'Step 1 - Analysis Setup',
         tour_setup_desc_html: 'This panel has three sections:<br>• <b>Field &amp; Time</b> - name your field and pick a date range<br>• <b>Indices</b> - choose which vegetation or drought indices to compute<br>• <b>Area of Interest</b> - select your field boundary',
         tour_aoi_title: 'Choose Your Field',
-        tour_aoi_desc_html: '<b>Parcel Search</b> - find by cadastral ID or region name<br><b>Map Click</b> - click directly on the map<br><b>GeoJSON</b> - paste custom coordinates<br><br>After loading, an <em>Edit Boundary</em> button lets you adjust the polygon.',
+        tour_aoi_desc_html: '<b>Cadastral parcels</b> - find by parcel ID or map click<br><b>Draw polygon</b> - draw your own AOI anytime<br><b>GeoJSON</b> - paste custom coordinates<br><br>After loading, an <em>Edit Boundary</em> button lets you adjust the polygon.',
         tour_run_title: 'Run the Analysis',
         tour_run_desc_html: 'After setting your AOI, dates, and indices - click here to search for cloud-free satellite images. Results will appear below with period averages and available dates.',
         tour_map_title: 'Interactive Map',
@@ -250,14 +250,25 @@ const I18N = {
         deselect_all: 'deselect all',
         area_interest: 'Area of Interest',
         parcel_search: 'Parcel Search',
+        aoi_cadastral: 'Cadastral Parcels',
         map_click: 'Map Click',
+        draw_polygon: 'Draw Polygon',
         geojson: 'GeoJSON',
+        parcel_search_title: 'Find by Parcel ID',
+        map_click_title: 'Find by Map Click',
         parcel_hint: 'Enter a parcel ID (TERYT) or region name + parcel number',
         find_parcel: 'FIND PARCEL',
         searching: 'SEARCHING...',
         map_click_desc: 'Click the button below, then click on the map to identify the cadastral parcel at that location.',
         pick_from_map: 'PICK FROM MAP',
         click_on_map: 'CLICK ON MAP...',
+        draw_polygon_desc: 'Draw your own AOI polygon on the map. This mode is always available if cadastral services are down.',
+        start_drawing: 'START DRAWING',
+        drawing_active: 'DRAWING... (DOUBLE-CLICK TO FINISH)',
+        finish_polygon: 'FINISH POLYGON',
+        clear_drawing: 'CLEAR',
+        draw_info_idle: 'Click on the map to add polygon vertices. Double-click to finish.',
+        draw_info_points: '{count} points added. Double-click to finish or click FINISH POLYGON.',
         apply_geojson: 'APPLY GEOJSON',
         edit_boundary: 'EDIT BOUNDARY',
         save_boundary: 'SAVE BOUNDARY',
@@ -352,7 +363,7 @@ const I18N = {
         status_layers_partial: 'Map layers loaded ({loaded} OK, {failed} date(s) failed). Toggle layers in the panel.',
         status_layers_none: 'Could not load any map layers. The selected dates may not have matching index data.',
         toast_time_period: 'Please select a time period.',
-        toast_select_aoi: 'Please select an area of interest using one of the methods (Parcel Search, Map Click, or GeoJSON).',
+        toast_select_aoi: 'Please select an area of interest using one of the methods (Cadastral parcels, Draw polygon, or GeoJSON).',
         toast_select_index: 'Please select at least one index to compute.',
         toast_select_date: 'Please select at least one date from the list above.',
         toast_no_aoi: 'No area of interest set.',
@@ -360,6 +371,7 @@ const I18N = {
         toast_parcel_none: 'No parcel found. Check the ID or name.',
         toast_geojson_paste: 'Paste GeoJSON coordinates first.',
         toast_geojson_invalid: 'Invalid GeoJSON. Expected a coordinates array like [[[lon,lat], ...]].',
+        toast_draw_need_points: 'Add at least 3 points to create a polygon.',
         validation_start_future: 'Start date is in the future — no satellite data available.',
         validation_end_future: 'End date is in the future — no satellite data available yet.',
         validation_end_before_start: 'End date must be after the start date.',
@@ -393,7 +405,7 @@ const I18N = {
         tour_setup_title: 'Krok 1 - Ustawienia analizy',
         tour_setup_desc_html: 'Ten panel ma trzy sekcje:<br>• <b>Pole i czas</b> - nazwij pole i wybierz zakres dat<br>• <b>Indeksy</b> - wybierz indeksy wegetacji/suszy do obliczeń<br>• <b>Obszar analizy</b> - wskaż granicę pola',
         tour_aoi_title: 'Wybierz swoje pole',
-        tour_aoi_desc_html: '<b>Wyszukaj działkę</b> - znajdź po identyfikatorze lub nazwie + numerze<br><b>Klik na mapie</b> - wskaż bezpośrednio na mapie<br><b>GeoJSON</b> - wklej własne współrzędne<br><br>Po wczytaniu możesz doprecyzować granicę przyciskiem <em>Edytuj granicę</em>.',
+        tour_aoi_desc_html: '<b>Działki ewidencyjne</b> - znajdź po identyfikatorze lub klikając mapę<br><b>Rysuj poligon</b> - narysuj własny AOI w każdej chwili<br><b>GeoJSON</b> - wklej własne współrzędne<br><br>Po wczytaniu możesz doprecyzować granicę przyciskiem <em>Edytuj granicę</em>.',
         tour_run_title: 'Uruchom analizę',
         tour_run_desc_html: 'Po ustawieniu AOI, dat i indeksów kliknij tutaj, aby wyszukać bezchmurne obrazy satelitarne. Wyniki pojawią się poniżej wraz ze średnimi i dostępnymi datami.',
         tour_map_title: 'Interaktywna mapa',
@@ -419,14 +431,25 @@ const I18N = {
         deselect_all: 'odznacz wszystko',
         area_interest: 'Obszar analizy',
         parcel_search: 'Wyszukaj działkę',
+        aoi_cadastral: 'Działki ewidencyjne',
         map_click: 'Klik na mapie',
+        draw_polygon: 'Rysuj poligon',
         geojson: 'GeoJSON',
+        parcel_search_title: 'Wyszukaj po identyfikatorze',
+        map_click_title: 'Wyszukaj klikając mapę',
         parcel_hint: 'Wpisz identyfikator działki (TERYT) lub nazwę miejscowości + numer',
         find_parcel: 'ZNAJDŹ DZIAŁKĘ',
         searching: 'SZUKANIE...',
         map_click_desc: 'Kliknij przycisk poniżej, a następnie kliknij na mapie, aby wskazać działkę ewidencyjną.',
         pick_from_map: 'WSKAŻ NA MAPIE',
         click_on_map: 'KLIKNIJ NA MAPIE...',
+        draw_polygon_desc: 'Narysuj własny poligon AOI na mapie. Ten tryb jest zawsze dostępny, gdy usługi katastralne są niedostępne.',
+        start_drawing: 'ROZPOCZNIJ RYSOWANIE',
+        drawing_active: 'RYSOWANIE... (DWUKLIK, ABY ZAKOŃCZYĆ)',
+        finish_polygon: 'ZAKOŃCZ POLIGON',
+        clear_drawing: 'WYCZYŚĆ',
+        draw_info_idle: 'Klikaj na mapie, aby dodać wierzchołki poligonu. Zakończ dwuklikiem.',
+        draw_info_points: 'Dodano punktów: {count}. Dwuklik zakończy rysowanie lub kliknij ZAKOŃCZ POLIGON.',
         apply_geojson: 'ZASTOSUJ GEOJSON',
         edit_boundary: 'EDYTUJ GRANICĘ',
         save_boundary: 'ZAPISZ GRANICĘ',
@@ -521,7 +544,7 @@ const I18N = {
         status_layers_partial: 'Załadowano warstwy ({loaded} OK, {failed} dat(y) nieudane). Przełączaj widoczność w panelu warstw.',
         status_layers_none: 'Nie udało się załadować żadnych warstw mapy. Wybrane daty mogą nie mieć pasujących danych.',
         toast_time_period: 'Wybierz zakres czasu.',
-        toast_select_aoi: 'Wybierz obszar analizy jedną z metod (Wyszukaj działkę, Klik na mapie lub GeoJSON).',
+        toast_select_aoi: 'Wybierz obszar analizy jedną z metod (Działki ewidencyjne, Rysuj poligon lub GeoJSON).',
         toast_select_index: 'Wybierz co najmniej jeden indeks do obliczenia.',
         toast_select_date: 'Wybierz co najmniej jedną datę z listy powyżej.',
         toast_no_aoi: 'Nie ustawiono obszaru analizy.',
@@ -529,6 +552,7 @@ const I18N = {
         toast_parcel_none: 'Nie znaleziono działki. Sprawdź identyfikator lub nazwę.',
         toast_geojson_paste: 'Najpierw wklej współrzędne GeoJSON.',
         toast_geojson_invalid: 'Nieprawidłowy GeoJSON. Oczekiwano tablicy współrzędnych [[[lon,lat], ...]].',
+        toast_draw_need_points: 'Dodaj co najmniej 3 punkty, aby utworzyć poligon.',
         validation_start_future: 'Data początkowa jest w przyszłości — brak dostępnych danych satelitarnych.',
         validation_end_future: 'Data końcowa jest w przyszłości — brak jeszcze danych satelitarnych.',
         validation_end_before_start: 'Data końcowa musi być późniejsza niż początkowa.',
@@ -626,9 +650,11 @@ function applyStaticTranslations() {
 
     document.querySelectorAll('.idx-group-header .select-all-link').forEach(function(el) { el.textContent = t('select_all'); });
     const aoiMethodSpans = document.querySelectorAll('.aoi-method span');
-    if (aoiMethodSpans[0]) aoiMethodSpans[0].textContent = t('parcel_search');
-    if (aoiMethodSpans[1]) aoiMethodSpans[1].textContent = t('map_click');
+    if (aoiMethodSpans[0]) aoiMethodSpans[0].textContent = t('aoi_cadastral');
+    if (aoiMethodSpans[1]) aoiMethodSpans[1].textContent = t('draw_polygon');
     if (aoiMethodSpans[2]) aoiMethodSpans[2].textContent = t('geojson');
+    _setText('#parcel-search-title', t('parcel_search_title'));
+    _setText('#map-click-title', t('map_click_title'));
 
     const parcelInput = document.getElementById('parcel_query');
     if (parcelInput) parcelInput.placeholder = currentLanguage === 'pl' ? 'np. 141201_1.0001.6509 lub Krzewina 134' : 'e.g. 141201_1.0001.6509 or Krzewina 134';
@@ -636,6 +662,12 @@ function applyStaticTranslations() {
     _setText('#btn-parcel-text', t('find_parcel'));
     _setText('.mapclick-desc', t('map_click_desc'));
     _setText('#btn-pick-text', t('pick_from_map'));
+    _setText('#draw-polygon-desc', t('draw_polygon_desc'));
+    const drawBtn = document.getElementById('btn-draw');
+    if (drawBtn && drawBtn.classList.contains('active')) _setText('#btn-draw-text', t('drawing_active'));
+    else _setText('#btn-draw-text', t('start_drawing'));
+    _setText('#btn-draw-finish', t('finish_polygon'));
+    _setText('#btn-draw-clear', t('clear_drawing'));
     const geoBtn = document.querySelector('#aoi-panel-geojson .btn-apply-geojson');
     if (geoBtn) geoBtn.textContent = t('apply_geojson');
     const geoInput = document.getElementById('geojson_input');

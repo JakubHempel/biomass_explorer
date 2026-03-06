@@ -87,6 +87,17 @@ html,body{height:100%;font-family:'Inter',-apple-system,sans-serif;color:var(--t
 }
 .field-list-search input{border:none;outline:none;background:transparent;font-size:13px;font-family:inherit;color:var(--text);flex:1}
 .field-list-search svg{color:var(--text-muted);flex-shrink:0}
+body.dark-mode .field-list-search{
+  background:#0f172a;
+  border-color:var(--border);
+}
+body.dark-mode .field-list-search input{
+  background:transparent !important;
+  color:var(--text) !important;
+}
+body.dark-mode .field-list-search svg{
+  color:#64748b;
+}
 .field-list{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
 .field-item{
   display:flex;align-items:center;gap:10px;padding:8px 10px;
@@ -185,6 +196,128 @@ textarea{min-height:52px;resize:vertical}
 /* ── spinner ── */
 .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── dark mode contrast tuning ── */
+body.dark-mode .panel{
+  background:#0f172a;
+  border-right-color:#334155;
+}
+body.dark-mode .panel-footer{
+  background:#0f172a;
+  border-top-color:#334155;
+}
+body.dark-mode .panel-scroll::-webkit-scrollbar-thumb{background:#475569}
+
+body.dark-mode .acc{
+  border-color:#334155;
+}
+body.dark-mode .acc-head{
+  background:#1e293b;
+  border-bottom-color:transparent;
+}
+body.dark-mode .acc-head:hover{background:#273449}
+body.dark-mode .acc-head.open{
+  background:#0f172a;
+  border-bottom-color:#334155;
+}
+body.dark-mode .acc-head-icon.slate{background:#334155}
+body.dark-mode .acc-head-icon.slate svg{color:#cbd5e1}
+body.dark-mode .acc-head-icon.blue{background:#1e3a8a}
+body.dark-mode .acc-head-icon.blue svg{color:#bfdbfe}
+body.dark-mode .acc-head-icon.green{background:#14532d}
+body.dark-mode .acc-head-icon.green svg{color:#bbf7d0}
+body.dark-mode .acc-head-icon.amber{background:#78350f}
+body.dark-mode .acc-head-icon.amber svg{color:#fde68a}
+body.dark-mode .acc-label{color:#cbd5e1}
+body.dark-mode .acc-meta{color:#94a3b8}
+body.dark-mode .acc-chevron{color:#94a3b8}
+
+body.dark-mode .field-list-search{
+  background:#0b1220;
+  border-color:#475569;
+}
+body.dark-mode .field-list-search input{color:#e2e8f0 !important}
+body.dark-mode .field-list-search svg{color:#94a3b8}
+body.dark-mode .field-item:hover{
+  background:#1f2937;
+  border-color:#475569;
+}
+body.dark-mode .field-item.active{
+  background:rgba(37,99,235,.20);
+  border-color:#60a5fa;
+}
+body.dark-mode .field-item-id{color:#93c5fd}
+body.dark-mode .field-item-sub{color:#94a3b8}
+body.dark-mode .field-item-area{color:#cbd5e1}
+body.dark-mode .btn-new-field{
+  background:rgba(37,99,235,.18);
+  color:#bfdbfe;
+  border-color:#60a5fa;
+}
+body.dark-mode .btn-new-field:hover{
+  background:rgba(37,99,235,.28);
+}
+
+body.dark-mode label{color:#cbd5e1}
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea{
+  background:#0b1220;
+  border-color:#475569;
+  color:#e2e8f0;
+}
+body.dark-mode input:focus,
+body.dark-mode select:focus,
+body.dark-mode textarea:focus{
+  background:#111827;
+  border-color:#60a5fa;
+  box-shadow:0 0 0 3px rgba(96,165,250,.18);
+}
+body.dark-mode input[readonly]{
+  background:#1f2937;
+  color:#cbd5e1;
+}
+body.dark-mode .owner-card{
+  background:#0b1220;
+  border-color:#334155;
+}
+body.dark-mode .owner-sub{color:#94a3b8}
+
+body.dark-mode .draw-hint{
+  background:linear-gradient(135deg,#13233d,#1e3a5f);
+  border-color:#3b82f6;
+}
+body.dark-mode .dh-text strong{color:#dbeafe}
+body.dark-mode .dh-text p{color:#bfdbfe}
+body.dark-mode .draw-hint.success{
+  background:#064e3b;
+  border-color:#10b981;
+}
+body.dark-mode .draw-hint.success .dh-text strong{color:#d1fae5}
+body.dark-mode .draw-hint.success .dh-text p{color:#a7f3d0}
+
+body.dark-mode .stat-m{
+  background:#111827;
+  border-color:#334155;
+}
+body.dark-mode .stat-m-l{color:#94a3b8}
+body.dark-mode .stat-m-v{color:#e2e8f0}
+body.dark-mode .btn-clear{
+  border-color:#475569;
+  color:#cbd5e1;
+}
+body.dark-mode .btn-clear:hover{background:#1f2937}
+body.dark-mode .cbadge{
+  background:#111827;
+  border-color:#334155;
+  color:#cbd5e1;
+}
+body.dark-mode .btn-inline{
+  background:#1e3a8a;
+  border-color:#2563eb;
+  color:#dbeafe;
+}
+body.dark-mode .btn-inline:hover{background:#1d4ed8}
 </style>
 </head>
 <body>
@@ -192,7 +325,7 @@ textarea{min-height:52px;resize:vertical}
 <!-- App Header -->
 <header class="app-header">
   <div class="app-header-inner">
-    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
+    <a href="/app" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
       <img src="/static/radscan_logo_color.jpg" class="app-logo" alt="Radscan">
     </a>
     <div>
@@ -201,9 +334,9 @@ textarea{min-height:52px;resize:vertical}
     </div>
     <div class="app-header-sep"></div>
     <div class="app-header-nav">
-      <a class="app-header-back" href="/admin">
+      <a class="app-header-back" id="tb-back-link" href="/admin">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        <span data-i18n="back">Admin</span>
+        <span id="tb-back-text" data-i18n="back">Admin</span>
       </a>
       <span class="app-mode-badge" id="tb-mode" data-i18n="editor_mode_new">Nowe</span>
     </div>
@@ -401,16 +534,49 @@ textarea{min-height:52px;resize:vertical}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script>
 // ─── Auth ───
+if (typeof bmSetupSessionGuard === 'function') {
+  bmSetupSessionGuard({ logoutOnReload: false, timeoutMs: 30 * 60 * 1000 });
+}
 const token = localStorage.getItem('bm_token');
 if (!token) { window.location.href = '/login'; }
 const username = localStorage.getItem('bm_username') || '–';
 const fullname = localStorage.getItem('bm_fullname') || username;
+let role = (localStorage.getItem('bm_role') || 'user').toLowerCase();
 document.getElementById('tb-user').textContent = username;
 document.getElementById('owner-nm').textContent = fullname;
 document.getElementById('owner-sub').textContent = username;
 document.getElementById('owner-av').textContent = (fullname[0] || '?').toUpperCase();
 
 initLang();
+
+function applyRoleUi() {
+  const backLink = document.getElementById('tb-back-link');
+  const backText = document.getElementById('tb-back-text');
+  if (!backLink || !backText) return;
+  if (role === 'admin') {
+    backLink.href = '/admin';
+    backText.textContent = 'Admin';
+    return;
+  }
+  backLink.href = '/my-fields';
+  backText.textContent = (typeof getCurrentLang === 'function' && getCurrentLang() === 'pl') ? 'Moje pola' : 'My Fields';
+}
+
+async function bootstrapAuth() {
+  try {
+    const res = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      logout();
+      return;
+    }
+    const me = await res.json();
+    role = (me.role || role || 'user').toLowerCase();
+    localStorage.setItem('bm_role', role);
+    applyRoleUi();
+  } catch (_) {
+    logout();
+  }
+}
 
 function logout() {
   ['bm_token','bm_role','bm_username','bm_fullname'].forEach(k => localStorage.removeItem(k));
@@ -492,12 +658,12 @@ function openAcc(id) {
 // ─── Map ───
 const map = L.map('map', { zoomControl: true }).setView([52.0, 19.5], 7);
 const satellite = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  { maxZoom: 20, attribution: '© Esri / Maxar' }
+  'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=en',
+  { maxNativeZoom: 20, maxZoom: 22, attribution: '© Google' }
 ).addTo(map);
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  { maxZoom: 19, attribution: '© OpenStreetMap' });
-L.control.layers({ 'Satelita (Esri)': satellite, 'Mapa (OSM)': osm }, {}, { position: 'topright', collapsed: false }).addTo(map);
+  { maxNativeZoom: 19, maxZoom: 22, attribution: '© OpenStreetMap' });
+L.control.layers({ 'Satellite (Google)': satellite, 'Street Map (OSM)': osm }, {}, { position: 'topright', collapsed: false }).addTo(map);
 
 const drawnItems = new L.FeatureGroup().addTo(map);
 const editLayer  = new L.FeatureGroup().addTo(map);  // existing polygon (read-only display)
@@ -868,6 +1034,7 @@ window.addEventListener('langchange', () => {
 });
 
 // ─── Init ───
+bootstrapAuth();
 loadCrops();
 loadFieldList();
 openAcc('acc-list');

@@ -42,7 +42,7 @@
 
 ### Backend & Storage
 - **FastAPI** backend with async endpoints.
-- **SQLite persistence** — every analysis run is saved locally, queryable by field ID.
+- **PostgreSQL persistence** — every analysis run is upserted into `obs.vegetation_indices`, queryable by field ID.
 - **ULDK integration** — Polish cadastral parcel lookup via the ULDK (GUGiK) web service.
 
 ---
@@ -98,12 +98,18 @@
 biomass_explorer/
 ├── main.py              # FastAPI app, endpoints, favicon, static file serving
 ├── services.py          # GEE processing: S2 + Landsat pipelines, tile URLs, pixel queries
-├── models.py            # SQLAlchemy model (measurements table with sensor column)
 ├── schemas.py           # Pydantic request/response schemas (incl. pixel inspector)
-├── database.py          # SQLite engine & session factory
+├── database.py          # PostgreSQL config + connection checks (db_config.json)
+├── db_config.json       # PostgreSQL connection settings (local, not committed)
 ├── uldk.py              # Polish cadastral (ULDK/GUGiK) parcel lookup service
 ├── requirements.txt     # Python dependencies
 ├── .env                 # GEE_PROJECT_ID (not committed)
+├── scripts/
+│   ├── schema/          # DDL: create/ensure schemas and tables
+│   ├── grants/          # GRANT scripts for app DB roles
+│   ├── migrations/      # One-off migration utilities
+│   ├── diagnostics/     # Read-only DB inspection helpers
+│   └── README.md        # Script categories + execution order
 └── static/
     ├── index.html       # Sidebar UI, setup sections, map container, tools
     ├── config.js        # Constants, toast system, index metadata, format utilities
@@ -163,15 +169,11 @@ After these steps you will have a project ID ready to use.
    For **Azure Database for PostgreSQL** (recommended for production), set:
    ```text
    ENABLE_DB='1'
-   DATABASE_URL='postgresql+psycopg://<username>:<password>@<host>:5432/<database>?sslmode=require'
-   DB_SCHEMA='obs'
-   DB_TABLE_NAME='vegetation_indices'
    ```
    Notes:
-   - `sslmode=require` enforces encrypted transport (TLS).
+   - Connection host/user/password/db are read from `db_config.json` in project root.
    - On Azure, the username is often `username@servername`.
-   - URL-encode special password characters (`@`, `:`, `/`, `#`, `%`, `?`).
-   - If your target table is in a non-default schema, set `DB_SCHEMA` accordingly.
+   - Runtime measurements target is hardcoded to `obs.vegetation_indices`.
 
 3. **Install dependencies:**
    ```bash
@@ -191,22 +193,24 @@ After these steps you will have a project ID ready to use.
 
 ## Azure PostgreSQL (Safe Setup)
 
-Use this checklist when moving persistence from local SQLite to Azure PostgreSQL:
+Use this checklist for PostgreSQL persistence on Azure:
 
 1. Create an Azure Database for PostgreSQL instance.
 2. Add your client/app IP in the server firewall (avoid `0.0.0.0/0` for production).
 3. Create a dedicated application user with least privilege.
-4. Set `DATABASE_URL` with `postgresql+psycopg://...` and `sslmode=require`.
-   - If your table is in `obs` schema, also set:
-     - `DB_SCHEMA='obs'`
-     - `DB_TABLE_NAME='vegetation_indices'`
-5. Install dependencies and run:
+4. Create/update `db_config.json` with valid connection values:
+   - `host`, `port`, `database`, `user`, `password`, `sslmode`
+5. In `.env`, set:
+   - `ENABLE_DB='1'`
+6. Ensure table/index contract exists by running:
+   - `scripts/schema/ensure_obs_vegetation_indices.sql`
+7. Install dependencies and run:
    ```bash
    python -m pip install -r requirements.txt
    python -m uvicorn main:app --reload
    ```
-6. Trigger one analysis and verify `/history/{field_id}` returns data.
-7. Verify direct table writes in PgAdmin:
+8. Trigger one analysis and verify `/history/{field_id}` returns data.
+9. Verify direct table writes in PgAdmin:
    ```sql
    SELECT COUNT(*) FROM obs.vegetation_indices;
    SELECT * FROM obs.vegetation_indices ORDER BY id DESC LIMIT 20;
@@ -216,18 +220,17 @@ Use this checklist when moving persistence from local SQLite to Azure PostgreSQL
 
 - **`password authentication failed`**:
   - Verify username format (`username@servername` is common on Azure).
-  - Confirm password is correct and URL-encoded in `DATABASE_URL`.
+  - Confirm password is correct in `db_config.json`.
 - **`could not connect` / timeout**:
   - Check firewall rules and server hostname.
   - Confirm port `5432` is reachable.
 - **`SSL is required`**:
-  - Ensure `sslmode=require` is present in `DATABASE_URL`.
-- **Still writing to local SQLite**:
+  - Ensure `sslmode='require'` in `db_config.json` for Azure.
+- **No rows persisted**:
   - Confirm `ENABLE_DB='1'`.
-  - Confirm `DATABASE_URL` is set and app restarted.
-- **Rows not visible in expected schema/table**:
-  - Confirm `DB_SCHEMA` and `DB_TABLE_NAME` values in `.env`.
-  - Verify startup log prints the expected schema/table target.
+  - Confirm `db_config.json` exists and app restarted.
+- **Rows not visible in expected table**:
+  - Verify writes target `obs.vegetation_indices` (hardcoded runtime target).
 
 ---
 
@@ -293,7 +296,7 @@ Important:
 | `POST` | `/api/pixel-value` | Sample index values at a specific lat/lng for a given date/sensor |
 | `GET`  | `/api/uldk/parcel` | Look up a cadastral parcel by TERYT ID or region name |
 | `GET`  | `/api/uldk/point` | Identify the cadastral parcel at a given lat/lng coordinate |
-| `GET`  | `/history/{field_id}` | Retrieve all stored measurements for a field |
+| `GET`  | `/history/{field_id}` | Retrieve all stored measurements for a field from PostgreSQL |
 | `GET`  | `/favicon.ico` | Serve the app favicon |
 | `GET`  | `/` | Serve the frontend |
 
@@ -314,7 +317,7 @@ Important:
 
 ## Database Schema
 
-By default, persistence targets `obs.vegetation_indices` (configurable with `DB_SCHEMA` and `DB_TABLE_NAME`).
+Persistence targets `obs.vegetation_indices` (hardcoded runtime target).
 
 The table stores one row per **(field, captured_at, sensor)** combination:
 
@@ -322,7 +325,7 @@ The table stores one row per **(field, captured_at, sensor)** combination:
 |:-------|:-----|:------|
 | `id` | Integer | Primary key |
 | `field_id` | Integer/BigInt | Numeric field identifier |
-| `captured_at` | Date | Observation date |
+| `captured_at` | Timestamp with time zone | Observation timestamp (date-based, midnight UTC) |
 | `sensor` | String | `"Sentinel-2"` or `"Landsat 8/9"` |
 | `source` | String | Data source label (e.g. `"GEE"`) |
 | `source_image_id` | String | Source image identifier (default `"1"`) |
@@ -336,8 +339,6 @@ Unique constraint should include sensor:
 - `(field_id, captured_at, sensor)`
 
 If your database currently has unique index `(field_id, captured_at)` only, inserts can fail when both Sentinel-2 and Landsat exist on the same date.
-
-> **Note:** After schema changes (e.g. pulling an update that adds columns), delete `biomass_results.db` and restart the server — the table will be recreated automatically.
 
 ---
 

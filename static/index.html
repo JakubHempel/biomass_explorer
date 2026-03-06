@@ -109,10 +109,14 @@
             <div id="setup-body">
             <!-- SECTION: Field Identity -->
             <div class="setup-section section-field-time">
-                <div class="setup-section-title">
+                <div class="setup-section-title" onclick="toggleSetupSection('field-time')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                     Field &amp; Time
+                    <button type="button" class="setup-section-toggle" id="setup-section-toggle-field-time" onclick="event.stopPropagation(); toggleSetupSection('field-time')" aria-label="Toggle section">
+                        <span class="setup-section-chevron" id="setup-section-chevron-field-time"></span>
+                    </button>
                 </div>
+                <div class="setup-section-body" id="setup-section-body-field-time">
                 <label for="field_id">Field Name</label>
                 <div class="field-name-row">
                     <input type="text" id="field_id" placeholder="e.g. Field_1">
@@ -127,14 +131,19 @@
                     <input type="date" id="end_date">
                 </div>
                 <div id="date-validation" class="validation-msg"></div>
+                </div>
             </div>
 
             <!-- SECTION: Indices Selection -->
             <div class="setup-section section-field-health">
-                <div class="setup-section-title">
+                <div class="setup-section-title" onclick="toggleSetupSection('field-health')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 17 4-8 4 4 5-6"/></svg>
                     Field Health Check
+                    <button type="button" class="setup-section-toggle" id="setup-section-toggle-field-health" onclick="event.stopPropagation(); toggleSetupSection('field-health')" aria-label="Toggle section">
+                        <span class="setup-section-chevron" id="setup-section-chevron-field-health"></span>
+                    </button>
                 </div>
+                <div class="setup-section-body" id="setup-section-body-field-health">
                 <div class="auto-indices-note" id="auto-indices-note">
                     We automatically choose the best indicators and calculate one clear Field Condition Score. No technical setup needed.
                 </div>
@@ -172,24 +181,30 @@
                         <label class="cb-item" title="Composite vegetation health score"><input type="checkbox" name="idx" value="VHI" data-group="ls"><span>VHI</span></label>
                     </div>
                 </details>
+                </div>
             </div>
 
             <!-- SECTION: Area of Interest -->
             <div class="setup-section section-aoi">
-                <div class="setup-section-title">
+                <div class="setup-section-title" onclick="toggleSetupSection('aoi')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1,6 4,22 22,18 18,2"/></svg>
                     Area of Interest
+                    <button type="button" class="setup-section-toggle" id="setup-section-toggle-aoi" onclick="event.stopPropagation(); toggleSetupSection('aoi')" aria-label="Toggle section">
+                        <span class="setup-section-chevron" id="setup-section-chevron-aoi"></span>
+                    </button>
                 </div>
+                <div id="aoi-status-compact" class="aoi-status aoi-status-compact" style="display:none;"></div>
+                <div class="setup-section-body" id="setup-section-body-aoi">
 
                 <!-- AOI method cards -->
                 <div class="aoi-methods" id="aoi-tabs">
-                    <button type="button" class="aoi-method active" data-tab="parcel" onclick="switchAoiTab('parcel')">
+                    <button type="button" class="aoi-method active" data-tab="cadastral" onclick="switchAoiTab('cadastral')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-                        <span>Parcel Search</span>
+                        <span>Cadastral Parcels</span>
                     </button>
-                    <button type="button" class="aoi-method" data-tab="mapclick" onclick="switchAoiTab('mapclick')">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                        <span>Map Click</span>
+                    <button type="button" class="aoi-method" data-tab="draw" onclick="switchAoiTab('draw')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 11 3 20 8 17 20 6 18"/></svg>
+                        <span>Draw Polygon</span>
                     </button>
                     <button type="button" class="aoi-method" data-tab="geojson" onclick="switchAoiTab('geojson')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
@@ -197,25 +212,40 @@
                     </button>
                 </div>
 
-                <!-- Tab 1: Parcel Search -->
-                <div class="aoi-tab-content active" id="aoi-panel-parcel">
-                    <input type="text" id="parcel_query" placeholder="e.g. 141201_1.0001.6509 or Krzewina 134">
-                    <div class="parcel-hint">Enter a parcel ID (TERYT) or region name + parcel number</div>
-                    <button type="button" class="btn-parcel-search" id="btn-parcel-search" onclick="searchParcel()">
-                        <span id="btn-parcel-text">FIND PARCEL</span>
-                        <span id="btn-parcel-spinner" class="spinner" style="display:none;"></span>
-                    </button>
-                    <div id="parcel-info" class="parcel-info" style="display:none;"></div>
+                <!-- Tab 1: Cadastral -->
+                <div class="aoi-tab-content active" id="aoi-panel-cadastral">
+                    <div class="aoi-subblock">
+                        <div class="aoi-subtitle" id="parcel-search-title">Find by Parcel ID</div>
+                        <input type="text" id="parcel_query" placeholder="e.g. 141201_1.0001.6509 or Krzewina 134">
+                        <button type="button" class="btn-parcel-search" id="btn-parcel-search" onclick="searchParcel()">
+                            <span id="btn-parcel-text">FIND PARCEL</span>
+                            <span id="btn-parcel-spinner" class="spinner" style="display:none;"></span>
+                        </button>
+                        <div id="parcel-info" class="parcel-info" style="display:none;"></div>
+                    </div>
+                    <div class="aoi-subblock">
+                        <div class="aoi-subtitle" id="map-click-title">Find by Map Click</div>
+                        <p class="mapclick-desc">Click the button below, then click on the map to identify the cadastral parcel at that location.</p>
+                        <button type="button" class="btn-pick" id="btn-pick" onclick="toggleMapPick()">
+                            <span class="pick-icon">&#128205;</span>
+                            <span id="btn-pick-text">PICK FROM MAP</span>
+                        </button>
+                        <div id="pick-info" class="parcel-info" style="display:none;"></div>
+                    </div>
                 </div>
 
-                <!-- Tab 2: Map Click -->
-                <div class="aoi-tab-content" id="aoi-panel-mapclick">
-                    <p class="mapclick-desc">Click the button below, then click on the map to identify the cadastral parcel at that location.</p>
-                    <button type="button" class="btn-pick" id="btn-pick" onclick="toggleMapPick()">
-                        <span class="pick-icon">&#128205;</span>
-                        <span id="btn-pick-text">PICK FROM MAP</span>
-                    </button>
-                    <div id="pick-info" class="parcel-info" style="display:none;"></div>
+                <!-- Tab 2: Draw polygon -->
+                <div class="aoi-tab-content" id="aoi-panel-draw">
+                    <p class="mapclick-desc" id="draw-polygon-desc">Draw your own AOI polygon on the map. This mode is always available if cadastral services are down.</p>
+                    <div class="draw-actions">
+                        <button type="button" class="btn-pick btn-draw" id="btn-draw" onclick="toggleDrawAOI()">
+                            <span class="pick-icon">&#9998;</span>
+                            <span id="btn-draw-text">START DRAWING</span>
+                        </button>
+                        <button type="button" class="btn-outline btn-draw-finish" id="btn-draw-finish" onclick="finishDrawAOI()">FINISH POLYGON</button>
+                        <button type="button" class="btn-outline btn-draw-clear" id="btn-draw-clear" onclick="clearDrawAOI()">CLEAR</button>
+                    </div>
+                    <div id="draw-info" class="parcel-info" style="display:none;"></div>
                 </div>
 
                 <!-- Tab 3: GeoJSON -->
@@ -231,6 +261,7 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                     EDIT BOUNDARY
                 </button>
+                </div>
             </div>
 
             <button class="btn-primary" id="btn-search" onclick="startAnalysis()">

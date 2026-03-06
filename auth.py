@@ -3,14 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Optional
-import json
 import os
 
 import bcrypt
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-import psycopg2
+import database
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "biomass-explorer-jwt-secret-change-me")
 ALGORITHM = "HS256"
@@ -18,28 +17,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 h
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
-_cfg_cache: dict | None = None
-
-
-def _pg_cfg() -> dict:
-    global _cfg_cache
-    if _cfg_cache is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "db_config.json")
-        _cfg_cache = json.load(open(path, encoding="utf-8"))
-    return _cfg_cache
-
-
-def _get_pg_conn():
-    cfg = _pg_cfg()
-    return psycopg2.connect(
-        host=cfg["host"], port=cfg["port"], dbname=cfg["database"],
-        user=cfg["user"], password=cfg["password"],
-        sslmode=cfg.get("sslmode", "prefer"),
-    )
-
-
 # ---------------------------------------------------------------------------
-# User record (replaces SQLAlchemy models.User)
+# User record loaded from users.accounts (PostgreSQL)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -56,7 +35,7 @@ class UserRecord:
 
 _SELECT = (
     "SELECT id, username, email, full_name, hashed_password, role, is_active, created_at "
-    "FROM users.accounts"
+    f"FROM {database.USERS_ACCOUNTS_TABLE}"
 )
 
 
@@ -105,16 +84,12 @@ def _decode_token(token: str) -> Optional[dict]:
 
 def authenticate_user(username: str, password: str) -> Optional[UserRecord]:
     """Verify credentials against users.accounts in PostgreSQL."""
-    conn = _get_pg_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                _SELECT + " WHERE username = %s AND is_active = TRUE",
-                (username,),
-            )
-            row = cur.fetchone()
-    finally:
-        conn.close()
+    with database.pg_cursor() as cur:
+        cur.execute(
+            _SELECT + " WHERE username = %s AND is_active = TRUE",
+            (username,),
+        )
+        row = cur.fetchone()
 
     if not row or not verify_password(password, row[4]):
         return None
@@ -137,16 +112,12 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> UserRecord:
     if not username:
         raise exc
 
-    conn = _get_pg_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                _SELECT + " WHERE username = %s AND is_active = TRUE",
-                (username,),
-            )
-            row = cur.fetchone()
-    finally:
-        conn.close()
+    with database.pg_cursor() as cur:
+        cur.execute(
+            _SELECT + " WHERE username = %s AND is_active = TRUE",
+            (username,),
+        )
+        row = cur.fetchone()
 
     if row is None:
         raise exc

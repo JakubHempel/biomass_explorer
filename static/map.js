@@ -54,6 +54,10 @@ let lastPickPanelData = null;
 // =========================================================================
 let currentAOI = null;
 let mapPickActive = false;
+let drawAoiActive = false;
+let drawAoiPoints = [];
+let drawAoiMarkers = [];
+let drawAoiPreview = null;
 
 // =========================================================================
 //  LAST ANALYSIS DATA — kept for chart
@@ -70,7 +74,8 @@ function switchAoiTab(tab) {
     document.querySelectorAll('.aoi-tab-content').forEach(p => p.classList.remove('active'));
     const panel = document.getElementById('aoi-panel-' + tab);
     if (panel) panel.classList.add('active');
-    if (tab !== 'mapclick' && mapPickActive) disableMapPick();
+    if (tab !== 'cadastral' && mapPickActive) disableMapPick();
+    if (tab !== 'draw' && drawAoiActive) disableDrawAOI();
     document.getElementById('aoi-status').style.display = 'none';
 }
 
@@ -85,20 +90,12 @@ function setAOI(geojson, info) {
     }).addTo(map);
     map.fitBounds(aoiLayer.getBounds(), { padding: [50, 50], animate: true });
 
-    const statusEl = document.getElementById('aoi-status');
     if (info) {
         lastAoiStatusData = { type: 'parcel', info: Object.assign({}, info) };
-        let html = '<span class="aoi-ok-icon">&#10003;</span>';
-        html += '<span>' + (currentLang() === 'pl' ? 'Działka' : 'Parcel') + ' <b>' + (info.parcel_id || '—') + '</b>';
-        if (info.region)  html += ' &middot; ' + info.region;
-        if (info.commune) html += ' &middot; ' + info.commune;
-        html += '</span>';
-        statusEl.innerHTML = html;
     } else {
         lastAoiStatusData = { type: 'custom' };
-        statusEl.innerHTML = '<span class="aoi-ok-icon">&#10003;</span><span>' + (currentLang() === 'pl' ? 'Wczytano własny poligon' : 'Custom polygon loaded') + '</span>';
     }
-    statusEl.style.display = 'flex';
+    showAoiStatus(lastAoiStatusData);
 
     const fieldName = document.getElementById('field_id').value.trim();
     if (fieldName) saveFieldToRecent(fieldName, geojson, info);
@@ -110,8 +107,39 @@ function setAOI(geojson, info) {
     if (recenterBtn) recenterBtn.style.display = 'flex';
 }
 
+function showAoiStatus(payload) {
+    const html = renderAoiStatusHtml(payload);
+    const statusEl = document.getElementById('aoi-status');
+    if (statusEl) {
+        statusEl.innerHTML = html;
+    }
+    const compactEl = document.getElementById('aoi-status-compact');
+    if (compactEl) {
+        compactEl.innerHTML = html;
+    }
+    syncAoiStatusVisibility();
+}
+
+function syncAoiStatusVisibility() {
+    const statusEl = document.getElementById('aoi-status');
+    const compactEl = document.getElementById('aoi-status-compact');
+    const body = document.getElementById('setup-section-body-aoi');
+    if (!statusEl && !compactEl) return;
+
+    const hasStatus = !!(typeof lastAoiStatusData !== 'undefined' && lastAoiStatusData);
+    if (!hasStatus) {
+        if (statusEl) statusEl.style.display = 'none';
+        if (compactEl) compactEl.style.display = 'none';
+        return;
+    }
+
+    const aoiCollapsed = !!(body && body.classList.contains('collapsed'));
+    if (statusEl) statusEl.style.display = aoiCollapsed ? 'none' : 'flex';
+    if (compactEl) compactEl.style.display = aoiCollapsed ? 'flex' : 'none';
+}
+
 // =========================================================================
-//  TAB 1 — PARCEL SEARCH
+//  TAB 1 — CADASTRAL (PARCEL SEARCH)
 // =========================================================================
 async function searchParcel() {
     const query = document.getElementById('parcel_query').value.trim();
@@ -143,7 +171,7 @@ async function searchParcel() {
 }
 
 // =========================================================================
-//  TAB 2 — MAP CLICK PICK
+//  TAB 1 — CADASTRAL (MAP CLICK PICK)
 // =========================================================================
 function toggleMapPick() {
     if (mapPickActive) { disableMapPick(); } else { enableMapPick(); }
@@ -175,7 +203,7 @@ async function onMapPickClick(e) {
 
     try {
         const res = await fetch(API_URL + '/api/uldk/locate?lat=' + lat + '&lng=' + lng);
-        if (res.status === 404) { throw new Error(currentLang() === 'pl' ? 'W tym miejscu nie znaleziono działki ewidencyjnej. Usługa obejmuje tylko Polskę.' : 'No cadastral parcel found at this location. This service covers Poland only.'); }
+        if (res.status === 404) { throw new Error(currentLang() === 'pl' ? 'W tym miejscu nie znaleziono działki ewidencyjnej. Usługa obejmuje tylko Polskę, a ULDK bywa chwilowo niedostępny — spróbuj ponownie za jakiś czas.' : 'No cadastral parcel found at this location. This service covers Poland only, and ULDK may be temporarily unavailable — please try again later.'); }
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || 'ULDK lookup failed (' + res.status + ')');
@@ -190,6 +218,124 @@ async function onMapPickClick(e) {
         pickInfo.innerHTML = '<span class="parcel-error">' + e.message + '</span>';
     }
     map.removeLayer(tempMarker);
+}
+
+// =========================================================================
+//  TAB 2 — DRAW OWN POLYGON
+// =========================================================================
+function toggleDrawAOI() {
+    if (drawAoiActive) { disableDrawAOI(); } else { enableDrawAOI(); }
+}
+
+function enableDrawAOI() {
+    if (mapPickActive) disableMapPick();
+    drawAoiActive = true;
+    clearDrawSketch();
+    map.doubleClickZoom.disable();
+    document.getElementById('map').classList.add('map-draw-active');
+    document.getElementById('btn-draw').classList.add('active');
+    document.getElementById('btn-draw-text').innerText = t('drawing_active');
+    const drawInfo = document.getElementById('draw-info');
+    drawInfo.innerHTML = '<span class="parcel-loading">' + t('draw_info_idle') + '</span>';
+    drawInfo.style.display = 'block';
+    map.on('click', onDrawAoiClick);
+    map.on('dblclick', onDrawAoiDblClick);
+}
+
+function disableDrawAOI() {
+    drawAoiActive = false;
+    map.doubleClickZoom.enable();
+    document.getElementById('map').classList.remove('map-draw-active');
+    document.getElementById('btn-draw').classList.remove('active');
+    document.getElementById('btn-draw-text').innerText = t('start_drawing');
+    map.off('click', onDrawAoiClick);
+    map.off('dblclick', onDrawAoiDblClick);
+    clearDrawSketch();
+}
+
+function clearDrawSketch() {
+    if (drawAoiPreview) {
+        map.removeLayer(drawAoiPreview);
+        drawAoiPreview = null;
+    }
+    drawAoiMarkers.forEach(function(marker) { map.removeLayer(marker); });
+    drawAoiMarkers = [];
+    drawAoiPoints = [];
+}
+
+function updateDrawPreview() {
+    if (drawAoiPreview) {
+        map.removeLayer(drawAoiPreview);
+        drawAoiPreview = null;
+    }
+    if (drawAoiPoints.length >= 3) {
+        drawAoiPreview = L.polygon(drawAoiPoints, {
+            color: '#f59e0b',
+            weight: 2,
+            fillOpacity: 0.12,
+            dashArray: '6, 6'
+        }).addTo(map);
+        return;
+    }
+    if (drawAoiPoints.length >= 2) {
+        drawAoiPreview = L.polyline(drawAoiPoints, {
+            color: '#f59e0b',
+            weight: 2,
+            dashArray: '6, 6'
+        }).addTo(map);
+    }
+}
+
+function onDrawAoiClick(e) {
+    drawAoiPoints.push([e.latlng.lat, e.latlng.lng]);
+    const marker = L.circleMarker(e.latlng, {
+        radius: 5,
+        color: '#f59e0b',
+        weight: 2,
+        fillColor: '#fbbf24',
+        fillOpacity: 1
+    }).addTo(map);
+    drawAoiMarkers.push(marker);
+    updateDrawPreview();
+    const drawInfo = document.getElementById('draw-info');
+    drawInfo.innerHTML = '<span class="parcel-loading">' + t('draw_info_points', { count: drawAoiPoints.length }) + '</span>';
+    drawInfo.style.display = 'block';
+}
+
+function onDrawAoiDblClick(e) {
+    L.DomEvent.stopPropagation(e);
+    L.DomEvent.preventDefault(e);
+    finishDrawAOI();
+}
+
+function finishDrawAOI() {
+    if (!drawAoiActive) return;
+    if (drawAoiPoints.length < 3) {
+        showToast(t('toast_draw_need_points'), 'warning');
+        return;
+    }
+
+    const coords = drawAoiPoints.map(function(p) { return [p[1], p[0]]; });
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+    if (!first || !last || first[0] !== last[0] || first[1] !== last[1]) coords.push([first[0], first[1]]);
+    const geojson = { type: 'Polygon', coordinates: [coords] };
+
+    disableDrawAOI();
+    setAOI(geojson, null);
+}
+
+function clearDrawAOI() {
+    if (!drawAoiActive) {
+        const drawInfo = document.getElementById('draw-info');
+        drawInfo.innerHTML = '<span class="parcel-loading">' + t('draw_info_idle') + '</span>';
+        drawInfo.style.display = 'block';
+        return;
+    }
+    clearDrawSketch();
+    const drawInfo = document.getElementById('draw-info');
+    drawInfo.innerHTML = '<span class="parcel-loading">' + t('draw_info_idle') + '</span>';
+    drawInfo.style.display = 'block';
 }
 
 // =========================================================================
@@ -323,10 +469,9 @@ function renderAoiStatusHtml(payload) {
     }
     if (payload.type === 'saved') {
         let html = '<span class="aoi-ok-icon">&#128190;</span>';
-        html += '<span><b>' + payload.name + '</b> ' + (currentLang() === 'pl' ? 'wczytano z zapisanych pól' : 'loaded from saved fields');
-        if (payload.info && payload.info.parcel_id) html += ' &middot; ' + (currentLang() === 'pl' ? 'Działka ' : 'Parcel ') + payload.info.parcel_id;
-        html += '<br><span class="aoi-saved-hint">' + (currentLang() === 'pl' ? 'Przywrócono geometrię AOI — wybierz daty i indeksy, następnie uruchom wyszukiwanie. Możesz też edytować granicę poniżej.' : 'AOI geometry restored — select dates &amp; indices, then search. You can also edit the boundary below.') + '</span>';
-        html += '</span>';
+        html += '<span>' + (currentLang() === 'pl'
+            ? ('Geometria pola <b>' + payload.name + '</b> została przywrócona z bazy użytkownika.')
+            : ('Field geometry <b>' + payload.name + '</b> has been restored from the user database.')) + '</span>';
         return html;
     }
     return '<span class="aoi-ok-icon">&#10003;</span><span>' + (currentLang() === 'pl' ? 'Wczytano własny poligon' : 'Custom polygon loaded') + '</span>';
@@ -334,9 +479,14 @@ function renderAoiStatusHtml(payload) {
 
 function refreshAoiTranslations() {
     const statusEl = document.getElementById('aoi-status');
-    if (statusEl && statusEl.style.display !== 'none' && lastAoiStatusData) {
+    if (statusEl && lastAoiStatusData) {
         statusEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
     }
+    const compactEl = document.getElementById('aoi-status-compact');
+    if (compactEl && lastAoiStatusData) {
+        compactEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
+    }
+    syncAoiStatusVisibility();
     const parcelInfoEl = document.getElementById('parcel-info');
     if (parcelInfoEl && parcelInfoEl.style.display !== 'none' && lastParcelPanelData) {
         parcelInfoEl.innerHTML = buildParcelInfoHTML(lastParcelPanelData.parcel, lastParcelPanelData.count);
@@ -344,6 +494,13 @@ function refreshAoiTranslations() {
     const pickInfoEl = document.getElementById('pick-info');
     if (pickInfoEl && pickInfoEl.style.display !== 'none' && lastPickPanelData && pickInfoEl.innerHTML.indexOf('parcel-meta') !== -1) {
         pickInfoEl.innerHTML = buildParcelInfoHTML(lastPickPanelData.parcel, lastPickPanelData.count);
+    }
+    const drawInfoEl = document.getElementById('draw-info');
+    if (drawInfoEl && drawInfoEl.style.display !== 'none') {
+        const drawMsg = (drawAoiPoints.length > 0)
+            ? t('draw_info_points', { count: drawAoiPoints.length })
+            : t('draw_info_idle');
+        drawInfoEl.innerHTML = '<span class="parcel-loading">' + drawMsg + '</span>';
     }
 }
 
@@ -516,11 +673,27 @@ function getCurrentLegendIndex() { return currentLegendIdx; }
 const SAVED_FIELDS_KEY = 'biomass_explorer_saved_fields';
 const MAX_SAVED_FIELDS = 10;
 
+function hasAuthenticatedSession() {
+    return !!localStorage.getItem('bm_token');
+}
+
+function refreshSavedFieldsAccessUi() {
+    const btn = document.getElementById('btn-saved-fields');
+    const dd = document.getElementById('saved-fields-dropdown');
+    const allowed = hasAuthenticatedSession();
+    if (btn) {
+        btn.style.display = allowed ? 'inline-flex' : 'none';
+        btn.disabled = !allowed;
+    }
+    if (!allowed && dd) dd.style.display = 'none';
+}
+
 function getSavedFields() {
     try { return JSON.parse(localStorage.getItem(SAVED_FIELDS_KEY) || '[]'); }
     catch { return []; }
 }
 function saveFieldToRecent(name, geojson, info) {
+    if (!hasAuthenticatedSession()) return;
     let fields = getSavedFields();
     fields = fields.filter(f => f.name !== name);
     fields.unshift({
@@ -538,6 +711,11 @@ function removeSavedField(index) {
     renderSavedFields();
 }
 function toggleSavedFields() {
+    if (!hasAuthenticatedSession()) {
+        const dd = document.getElementById('saved-fields-dropdown');
+        if (dd) dd.style.display = 'none';
+        return;
+    }
     const dd = document.getElementById('saved-fields-dropdown');
     if (dd.style.display === 'none') {
         dd.style.display = 'block';
@@ -553,6 +731,10 @@ async function renderSavedFields() {
     dd.innerHTML = '<div class="saved-empty">' + (pl ? 'Ładowanie…' : 'Loading…') + '</div>';
 
     const token = localStorage.getItem('bm_token');
+    if (!token) {
+        dd.innerHTML = '<div class="saved-empty">' + (pl ? 'Zaloguj się, aby przeglądać zapisane pola' : 'Log in to browse saved fields') + '</div>';
+        return;
+    }
     let dbFields = [];
 
     if (token) {
@@ -564,7 +746,6 @@ async function renderSavedFields() {
         } catch (_) {}
     }
 
-    const localFields = getSavedFields();
     let html = '';
 
     // ── DB fields section ──────────────────────────────────────────────────
@@ -587,21 +768,8 @@ async function renderSavedFields() {
         }).join('');
     }
 
-    // ── Recent/local fields section ────────────────────────────────────────
-    if (localFields.length) {
-        html += '<div class="sfd-section-label">' + (pl ? 'Ostatnio używane' : 'Recently used') + '</div>';
-        html += localFields.map((f, i) => {
-            const date = new Date(f.savedAt).toLocaleDateString(pl ? 'pl-PL' : 'en-GB', { day: 'numeric', month: 'short' });
-            return '<div class="saved-field-item" onclick="loadSavedField(' + i + ')">'
-                 + '  <div><span class="saved-field-name">' + escHtmlSf(f.name) + '</span>'
-                 + '  <span class="saved-field-date">' + date + '</span></div>'
-                 + '  <button type="button" class="saved-field-remove" onclick="event.stopPropagation(); removeSavedField(' + i + ')" title="' + (pl ? 'Usuń' : 'Remove') + '">&times;</button>'
-                 + '</div>';
-        }).join('');
-    }
-
     if (!html) {
-        html = '<div class="saved-empty">' + (pl ? 'Brak pól' : 'No fields yet') + '</div>';
+        html = '<div class="saved-empty">' + (pl ? 'Brak pól w bazie' : 'No database fields found') + '</div>';
     }
     dd.innerHTML = html;
 }
@@ -612,6 +780,7 @@ function escHtmlSf(s) {
 function escSq(s) { return String(s || '').replace(/'/g, "\\'"); }
 
 async function loadDbField(id, name) {
+    if (!hasAuthenticatedSession()) return;
     document.getElementById('field_id').value = name;
     document.getElementById('saved-fields-dropdown').style.display = 'none';
 
@@ -624,16 +793,15 @@ async function loadDbField(id, name) {
             const d = await res.json();
             if (d.geojson) {
                 setAOI(d.geojson, null);
-                const statusEl = document.getElementById('aoi-status');
                 lastAoiStatusData = { type: 'saved', name: name, info: null };
-                statusEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
-                statusEl.style.display = 'flex';
+                showAoiStatus(lastAoiStatusData);
             }
         }
     } catch (_) {}
 }
 
 function loadSavedField(index) {
+    if (!hasAuthenticatedSession()) return;
     const fields = getSavedFields();
     const f = fields[index];
     if (!f) return;
@@ -641,12 +809,14 @@ function loadSavedField(index) {
     setAOI(f.geojson, f.info);
     document.getElementById('saved-fields-dropdown').style.display = 'none';
 
-    const statusEl = document.getElementById('aoi-status');
     lastAoiStatusData = { type: 'saved', name: f.name, info: f.info || null };
-    statusEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
-    statusEl.style.display = 'flex';
+    showAoiStatus(lastAoiStatusData);
 }
 
 window.refreshOverlayTranslations = refreshOverlayTranslations;
 window.refreshAoiTranslations = refreshAoiTranslations;
 window.getCurrentLegendIndex = getCurrentLegendIndex;
+window.syncAoiStatusVisibility = syncAoiStatusVisibility;
+
+// Keep saved-fields picker unavailable for anonymous sessions.
+refreshSavedFieldsAccessUi();

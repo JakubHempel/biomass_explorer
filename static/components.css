@@ -539,8 +539,45 @@
     margin-bottom: 12px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
 }
 .setup-section-title svg { color: var(--primary); flex-shrink: 0; }
+.setup-section-toggle {
+    margin-left: auto;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    background: var(--bg-input);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+}
+.setup-section-chevron {
+    width: 6px;
+    height: 6px;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform 0.2s;
+}
+.setup-section-chevron.collapsed {
+    transform: rotate(-45deg);
+}
+.setup-section-body {
+    overflow: hidden;
+    max-height: 1800px;
+    opacity: 1;
+    transition: max-height 0.25s ease, opacity 0.2s ease;
+}
+.setup-section-body.collapsed {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+}
 
 .idx-sensor-tag {
     font-size: 0.54rem;
@@ -601,6 +638,20 @@
     display: block;
 }
 
+.aoi-subblock + .aoi-subblock {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+}
+.aoi-subtitle {
+    font-size: 0.67rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
 /* Parcel search tab */
 .parcel-hint {
     font-size: 0.66rem; color: var(--text-muted); margin: 4px 0 8px; line-height: 1.45;
@@ -614,6 +665,7 @@
     box-shadow: 0 2px 8px rgba(124,58,237,0.25);
     transition: transform 0.15s, box-shadow 0.15s;
     width: 100%;
+    margin-top: 8px;
 }
 .btn-parcel-search:hover:not(:disabled) {
     transform: translateY(-1px);
@@ -650,11 +702,27 @@
 
 .pick-icon { font-size: 1rem; line-height: 1; }
 
+.draw-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+.btn-draw-finish,
+.btn-draw-clear {
+    width: 100%;
+    font-size: 0.7rem !important;
+    padding: 8px 12px !important;
+}
+
 /* Map cursor override when picking */
 .map-pick-active { cursor: crosshair !important; }
 .map-pick-active .leaflet-container { cursor: crosshair !important; }
 .map-pick-active .leaflet-interactive { cursor: crosshair !important; }
 .map-pick-active .leaflet-grab { cursor: crosshair !important; }
+.map-draw-active { cursor: crosshair !important; }
+.map-draw-active .leaflet-container { cursor: crosshair !important; }
+.map-draw-active .leaflet-interactive { cursor: crosshair !important; }
+.map-draw-active .leaflet-grab { cursor: crosshair !important; }
 
 /* Temporary pick marker */
 .pick-marker { background: transparent; border: none; }
@@ -745,6 +813,14 @@
     padding: 9px 14px;
     font-size: 0.74rem; color: #166534; font-weight: 500;
     margin-top: 6px;
+}
+.aoi-status-compact {
+    margin: 6px 10px 0 10px;
+    padding: 7px 10px;
+    font-size: 0.7rem;
+}
+.aoi-status-compact .aoi-saved-hint {
+    display: none;
 }
 .aoi-ok-icon {
     width: 22px; height: 22px;

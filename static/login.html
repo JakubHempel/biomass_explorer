@@ -63,6 +63,14 @@ input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235
 }
 .btn-login:hover { opacity: .92; transform: translateY(-1px); }
 .btn-login:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.btn-guest {
+  width: 100%; padding: 10px 11px; margin-top: 10px;
+  background: transparent; color: var(--text-secondary);
+  border: 1.5px solid var(--border-input); border-radius: var(--radius);
+  font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.btn-guest:hover { border-color: var(--primary); color: var(--primary); background: var(--bg-input); }
 .error-box {
   background: var(--error-bg); border: 1px solid #fecaca; color: var(--error);
   border-radius: var(--radius); padding: 10px 13px; font-size: 13px;
@@ -112,7 +120,6 @@ input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235
         <p>Crop monitoring from space</p>
       </div>
     </div>
-
     <h2 data-i18n="login_h2">Zaloguj się</h2>
     <p class="subtitle" data-i18n="login_subtitle">Panel administratora</p>
 
@@ -130,14 +137,31 @@ input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235
                placeholder="••••••••" required>
       </div>
       <button class="btn-login" type="submit" id="btn-login" data-i18n="login_btn">Zaloguj się</button>
+      <button class="btn-guest" type="button" id="btn-guest" data-i18n="login_guest" onclick="continueAsGuest()">Kontynuuj jako gość</button>
     </form>
   </div>
 </div>
 
 <script>
+  function landingForRole(role) {
+    return (String(role || '').toLowerCase() === 'admin') ? '/admin' : '/my-fields';
+  }
+
+  function continueAsGuest() {
+    ['bm_token', 'bm_role', 'bm_username', 'bm_fullname', 'bm_session_expires_at'].forEach(function(k) {
+      localStorage.removeItem(k);
+    });
+    localStorage.setItem('bm_role', 'guest');
+    localStorage.setItem('bm_username', 'guest');
+    window.location.href = '/app';
+  }
+
   (function () {
     const tok = localStorage.getItem('bm_token');
-    if (tok) window.location.href = '/admin';
+    if (tok) {
+      const role = localStorage.getItem('bm_role') || 'user';
+      window.location.href = landingForRole(role);
+    }
   })();
 
   initLang();
@@ -168,7 +192,7 @@ input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235
       localStorage.setItem('bm_role',     data.role);
       localStorage.setItem('bm_username', data.username);
       localStorage.setItem('bm_fullname', data.full_name || '');
-      window.location.href = '/admin';
+      window.location.href = landingForRole(data.role);
     } catch (err) {
       errorBox.textContent   = err.message || t('login_error_default');
       errorBox.style.display = 'block';

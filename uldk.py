@@ -14,6 +14,7 @@ Coordinate handling (GetParcelByXY):
 """
 
 import logging
+import time
 import requests
 from pyproj import Transformer
 from shapely import wkt
@@ -27,6 +28,7 @@ _to_2180 = Transformer.from_crs("EPSG:4326", "EPSG:2180", always_xy=True)
 
 ULDK_BASE = "https://uldk.gugik.gov.pl/"
 TIMEOUT = 15  # seconds
+LOCATE_RETRY_DELAYS_S = (0.3, 1.0)  # total attempts = len(delays) + 1
 
 
 # -------------------------------------------------------------------------
@@ -190,14 +192,55 @@ def locate_parcel(lat: float, lng: float) -> dict:
         "srid": "4326",          # return geometry in WGS-84
     }
 
-    log.info("ULDK locate_parcel → %s  params=%s", ULDK_BASE, params)
-    resp = requests.get(ULDK_BASE, params=params, timeout=TIMEOUT)
-    resp.raise_for_status()
-    log.debug("ULDK locate_parcel raw response:\n%s", resp.text[:500])
+    total_attempts = len(LOCATE_RETRY_DELAYS_S) + 1
+    last_exc: Exception | None = None
+    rows: list[dict] = []
 
-    rows = _parse_uldk_response(resp.text, fields, multi=False)
+    for attempt in range(total_attempts):
+        try:
+            log.info(
+                "ULDK locate_parcel attempt %d/%d → %s  params=%s",
+                attempt + 1,
+                total_attempts,
+                ULDK_BASE,
+                params,
+            )
+            resp = requests.get(ULDK_BASE, params=params, timeout=TIMEOUT)
+            resp.raise_for_status()
+            log.debug("ULDK locate_parcel raw response:\n%s", resp.text[:500])
+
+            rows = _parse_uldk_response(resp.text, fields, multi=False)
+            if rows:
+                break
+
+            if attempt < len(LOCATE_RETRY_DELAYS_S):
+                delay_s = LOCATE_RETRY_DELAYS_S[attempt]
+                log.info(
+                    "ULDK locate_parcel returned no rows (attempt %d/%d); retrying in %.1fs",
+                    attempt + 1,
+                    total_attempts,
+                    delay_s,
+                )
+                time.sleep(delay_s)
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt < len(LOCATE_RETRY_DELAYS_S):
+                delay_s = LOCATE_RETRY_DELAYS_S[attempt]
+                log.warning(
+                    "ULDK locate_parcel request failed (attempt %d/%d): %s; retrying in %.1fs",
+                    attempt + 1,
+                    total_attempts,
+                    exc,
+                    delay_s,
+                )
+                time.sleep(delay_s)
+                continue
+            raise
+
     if not rows:
-        log.info("ULDK locate_parcel → no results for lat=%s lng=%s", lat, lng)
+        if last_exc:
+            raise last_exc
+        log.info("ULDK locate_parcel → no results for lat=%s lng=%s after %d attempts", lat, lng, total_attempts)
         return {"count": 0, "results": []}
 
     results = []

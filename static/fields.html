@@ -31,6 +31,8 @@ body{font-family:'Inter',sans-serif;font-size:14px;color:var(--text);background:
 
 /* ── Layout ── */
 .layout{display:flex;height:calc(100vh - var(--topbar));overflow:hidden}
+.layout.list-first .panel{width:100%;min-width:100%}
+.layout.list-first .map-wrap{display:none}
 
 /* ── Panel ── */
 .panel{
@@ -67,6 +69,17 @@ select.filter-sel:focus{border-color:var(--primary)}
 .divider{height:1px;background:var(--border);margin:0 0 10px}
 .list-label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
   letter-spacing:.6px;padding:0 16px 6px}
+.list-pager{
+  flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  gap:8px;padding:8px 16px;border-top:1px solid var(--border);background:var(--surface);
+}
+.list-pager-info{font-size:11px;color:var(--text-muted)}
+.list-pager-actions{display:flex;gap:6px}
+.list-pager-btn{
+  padding:5px 9px;border-radius:7px;border:1px solid var(--border-input);
+  background:var(--surface2);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer
+}
+.list-pager-btn:disabled{opacity:.45;cursor:not-allowed}
 
 /* Field list items */
 .field-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;
@@ -106,6 +119,8 @@ select.filter-sel:focus{border-color:var(--primary)}
 .crop-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;
   font-size:12px;font-weight:600;background:#fef9c3;color:#854d0e;border:1px solid #fde68a}
 .detail-actions{display:flex;gap:8px;padding:0 0 4px}
+.detail-actions .btn{flex:1;justify-content:center}
+.detail-actions a.btn{text-decoration:none}
 .btn{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
   display:inline-flex;align-items:center;gap:5px;transition:all .15s;border:none}
 .btn-primary{background:var(--primary);color:#fff}
@@ -113,6 +128,15 @@ select.filter-sel:focus{border-color:var(--primary)}
 .btn-ghost{background:none;border:1px solid var(--border-input);color:var(--text-muted)}
 .btn-ghost:hover{background:var(--bg);color:var(--text)}
 .btn-full{width:100%;justify-content:center}
+.header-add-field{
+  background:linear-gradient(135deg,var(--primary),#1d4ed8) !important;
+  border-color:#1d4ed8 !important;
+  color:#fff !important;
+}
+.header-add-field:hover{
+  filter:brightness(1.05);
+  transform:translateY(-1px);
+}
 
 /* ── Map ── */
 .map-wrap{flex:1;position:relative}
@@ -124,9 +148,18 @@ select.filter-sel:focus{border-color:var(--primary)}
   padding:10px 14px;box-shadow:var(--shadow-md);min-width:140px;max-width:220px}
 .legend-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
   color:var(--text-muted);margin-bottom:7px}
+.legend-note{font-size:11px;color:var(--text-muted);margin-bottom:6px}
 .legend-item{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:12px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+body.dark-mode .legend{
+  background:rgba(15,23,42,.92);
+  border-color:#334155;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+}
+body.dark-mode .legend-title{color:#cbd5e1}
+body.dark-mode .legend-note{color:#94a3b8}
+body.dark-mode .legend-item{color:#e2e8f0}
 
 /* ── Loading ── */
 .loading-overlay{position:absolute;inset:0;background:rgba(255,255,255,.7);
@@ -148,7 +181,7 @@ select.filter-sel:focus{border-color:var(--primary)}
 <!-- App Header -->
 <header class="app-header">
   <div class="app-header-inner">
-    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
+    <a href="/app" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
       <img src="/static/radscan_logo_color.jpg" class="app-logo" alt="Radscan">
     </a>
     <div>
@@ -157,9 +190,13 @@ select.filter-sel:focus{border-color:var(--primary)}
     </div>
     <div class="app-header-sep"></div>
     <div class="app-header-nav">
-      <a class="app-header-back" href="/admin">
+      <a class="app-header-back" id="tb-back-link" href="/admin">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        <span data-i18n="back">Admin</span>
+        <span id="tb-back-text" data-i18n="back">Admin</span>
+      </a>
+      <a class="app-header-back header-add-field" href="/field-editor">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span data-i18n="draw_field">Add field</span>
       </a>
     </div>
     <div class="app-header-spacer"></div>
@@ -206,6 +243,13 @@ select.filter-sel:focus{border-color:var(--primary)}
         <div class="list-label" id="list-label"><span id="list-count">0</span> <span data-i18n="stat_fields">pól</span></div>
       </div>
       <div class="panel-scroll" id="field-list"></div>
+      <div class="list-pager" id="list-pager" style="display:none">
+        <div class="list-pager-info" id="list-pager-info">1-10 / 10 (page 1/1)</div>
+        <div class="list-pager-actions">
+          <button type="button" class="list-pager-btn" id="list-pager-prev" onclick="changeListPage(-1)" data-i18n="pager_prev">Prev</button>
+          <button type="button" class="list-pager-btn" id="list-pager-next" onclick="changeListPage(1)" data-i18n="pager_next">Next</button>
+        </div>
+      </div>
     </div>
 
     <!-- DETAIL VIEW -->
@@ -243,26 +287,97 @@ select.filter-sel:focus{border-color:var(--primary)}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────
+if (typeof bmSetupSessionGuard === 'function') {
+  bmSetupSessionGuard({ logoutOnReload: false, timeoutMs: 30 * 60 * 1000 });
+}
 const token = localStorage.getItem('bm_token');
 if (!token) { window.location.href = '/login'; }
 const username = localStorage.getItem('bm_username') || '';
 const fullname = localStorage.getItem('bm_fullname') || username;
-const role     = localStorage.getItem('bm_role') || 'user';
+let role       = (localStorage.getItem('bm_role') || 'user').toLowerCase();
 document.getElementById('tb-user').textContent = fullname || username;
 const roleEl = document.getElementById('tb-role');
-if (role === 'admin') { roleEl.textContent = 'admin'; roleEl.style.display = ''; }
+const backLink = document.getElementById('tb-back-link');
+const backText = document.getElementById('tb-back-text');
 function logout() { ['bm_token','bm_role','bm_username','bm_fullname'].forEach(k => localStorage.removeItem(k)); window.location.href = '/login'; }
 
 initLang();
 
+function applyRoleUi() {
+  const ownerSel = document.getElementById('q-owner');
+  const cropSel = document.getElementById('q-crop');
+  const legend = document.getElementById('legend');
+  if (role === 'admin') {
+    roleEl.textContent = 'admin';
+    roleEl.style.display = '';
+    if (backLink) backLink.href = '/admin';
+    if (backText) backText.textContent = 'Admin';
+    if (ownerSel) ownerSel.style.display = '';
+    if (cropSel) cropSel.style.flex = '';
+    if (legend) legend.style.display = '';
+    setMapMode(true);
+    return;
+  }
+  roleEl.style.display = 'none';
+  if (backLink) {
+    backLink.href = '/my-fields';
+    backLink.style.display = '';
+    backText.textContent = (typeof getCurrentLang === 'function' && getCurrentLang() === 'pl') ? 'Moje pola' : 'My Fields';
+  }
+  // User map view: same as admin view, but without owner selector.
+  if (ownerSel) ownerSel.style.display = 'none';
+  if (cropSel) cropSel.style.flex = '1';
+  if (legend) legend.style.display = 'none';
+  setMapMode(true);
+}
+
+function setMapMode(showMap) {
+  mapModeVisible = !!showMap;
+  const layout = document.querySelector('.layout');
+  if (layout) layout.classList.toggle('list-first', !mapModeVisible);
+  const toggleText = document.getElementById('map-toggle-text');
+  if (toggleText) toggleText.textContent = mapModeVisible ? t('list_back') : t('view_on_map');
+  if (mapModeVisible) {
+    setTimeout(function() {
+      if (map && typeof map.invalidateSize === 'function') map.invalidateSize();
+      if (activeId != null) {
+        const active = allFields.find(f => f.id === activeId);
+        if (active) zoomToField(active);
+      }
+    }, 80);
+  }
+}
+
+function toggleMapMode() {
+  setMapMode(!mapModeVisible);
+}
+
+async function bootstrapAuth() {
+  try {
+    const res = await fetch('/auth/me', { headers: hdrs() });
+    if (!res.ok) {
+      logout();
+      return;
+    }
+    const me = await res.json();
+    role = (me.role || role || 'user').toLowerCase();
+    localStorage.setItem('bm_role', role);
+    applyRoleUi();
+    loadData();
+  } catch (_) {
+    logout();
+  }
+}
+
 // ── Map init ──────────────────────────────────────────────────────────────
 const map = L.map('map', { zoomControl: true }).setView([52.0, 19.5], 7);
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Tiles © Esri', maxZoom: 20
+const satellite = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=en', {
+  maxNativeZoom: 20, maxZoom: 22, attribution: '© Google'
 }).addTo(map);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
-  attribution: '© CartoDB', maxZoom: 20, opacity: 0.8
-}).addTo(map);
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxNativeZoom: 19, maxZoom: 22, attribution: '© OpenStreetMap'
+});
+L.control.layers({ 'Satellite (Google)': satellite, 'Street Map (OSM)': osm }, {}, { position: 'topright', collapsed: false }).addTo(map);
 
 // ── Color palette ─────────────────────────────────────────────────────────
 const PALETTE = [
@@ -285,9 +400,14 @@ function ownerInitials(name) {
 // ── State ─────────────────────────────────────────────────────────────────
 let allFields = [];
 let filteredFields = [];
-let layerMap = {};       // field_id → Leaflet layer
+let layerMap = {};       // field_id → { polyLayer, pinLayer }
 let activeId = null;
 let ownersList = [];
+let mapModeVisible = true;
+let visibleFieldIds = new Set();
+const DOT_LOW_ZOOM_MAX = 12;
+let listPage = 1;
+const LIST_PAGE_SIZE = 20;
 
 // ── API helpers ───────────────────────────────────────────────────────────
 const hdrs = () => ({ 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' });
@@ -308,6 +428,7 @@ async function loadData() {
     ]);
     if (!fieldsRes.ok) throw new Error(await fieldsRes.text());
     allFields   = await fieldsRes.json();
+    allFields   = await hydrateMissingGeometries(allFields);
     ownersList  = ownersRes.ok ? await ownersRes.json() : [];
 
     buildOwnerColors();
@@ -324,6 +445,33 @@ async function loadData() {
   }
 }
 
+async function hydrateMissingGeometries(fields) {
+  const missing = fields.filter(function(f) {
+    return !f.geojson && f.id != null;
+  });
+  if (!missing.length) return fields;
+
+  const enriched = await Promise.all(fields.map(async function(f) {
+    if (f.geojson || f.id == null) return f;
+    try {
+      const res = await fetch('/api/fields/' + f.id, { headers: hdrs() });
+      if (!res.ok) return f;
+      const detail = await res.json();
+      if (!detail || !detail.geojson) return f;
+      const copy = Object.assign({}, f);
+      copy.geojson = detail.geojson;
+      if ((copy.area_ha == null || Number.isNaN(Number(copy.area_ha))) && detail.area_m2 != null) {
+        copy.area_ha = Number(detail.area_m2) / 10000;
+      }
+      return copy;
+    } catch (_) {
+      return f;
+    }
+  }));
+
+  return enriched;
+}
+
 function buildOwnerColors() {
   // Assign colors in consistent order (sorted by owner name)
   const sorted = [...ownersList].sort((a,b) => (a.name||'').localeCompare(b.name,'pl'));
@@ -336,15 +484,30 @@ function buildOwnerColors() {
 function populateFilters() {
   const ownerSel = document.getElementById('q-owner');
   const cropSel  = document.getElementById('q-crop');
+  const ownerPlaceholder = t('all_owners');
+  const cropPlaceholder = t('all_crops');
 
-  const owners = ownersList.length
-    ? ownersList
-    : [...new Map(allFields.filter(f=>f.owner_id).map(f=>[f.owner_id,{id:f.owner_id,name:f.owner_name}])).values()];
-  owners.forEach(o => {
-    const opt = document.createElement('option');
-    opt.value = o.id; opt.textContent = o.name || o.email || `#${o.id}`;
-    ownerSel.appendChild(opt);
-  });
+  // Rebuild options each time from current role/data snapshot.
+  ownerSel.innerHTML = '';
+  cropSel.innerHTML = '';
+  ownerSel.appendChild(new Option(ownerPlaceholder, ''));
+  cropSel.appendChild(new Option(cropPlaceholder, ''));
+
+  // Non-admin users already see only their own fields, so owner filter
+  // should stay empty to avoid exposing global owner list.
+  if (role !== 'admin') {
+    ownerSel.disabled = true;
+  } else {
+    ownerSel.disabled = false;
+    const owners = ownersList.length
+      ? ownersList
+      : [...new Map(allFields.filter(f=>f.owner_id).map(f=>[f.owner_id,{id:f.owner_id,name:f.owner_name}])).values()];
+    owners.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.id; opt.textContent = o.name || o.email || `#${o.id}`;
+      ownerSel.appendChild(opt);
+    });
+  }
 
   const crops = [...new Set(allFields.map(f=>f.crop).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pl'));
   crops.forEach(c => {
@@ -365,9 +528,12 @@ function applyFilters() {
     return true;
   });
 
+  listPage = 1;
   renderList(filteredFields);
+  visibleFieldIds = new Set(filteredFields.map(f => f.id));
   updateMapVisibility(filteredFields);
   document.getElementById('list-count').textContent = filteredFields.length;
+  buildLegend();
 }
 
 // ── Map layers ────────────────────────────────────────────────────────────
@@ -379,69 +545,128 @@ function renderMapLayers() {
 
   allFields.forEach(f => {
     const color = ownerColor(f.owner_id);
-    let layer;
+    const tooltipHtml = `<b>${f.name}</b><br>${f.owner_name||'–'} · ${f.crop||'–'}`;
+    let polyLayer = null;
+    let pinLayer = null;
 
     if (f.geojson) {
-      layer = L.geoJSON(f.geojson, {
+      polyLayer = L.geoJSON(f.geojson, {
         style: { fillColor: color, fillOpacity: 0.35, color, weight: 2, opacity: 0.85 }
       });
-      layer.on('mouseover', () => { if (activeId !== f.id) layer.setStyle({ fillOpacity: 0.55, weight: 3 }); });
-      layer.on('mouseout',  () => { if (activeId !== f.id) layer.setStyle({ fillOpacity: 0.35, weight: 2 }); });
-    } else if (f.lat && f.lng) {
-      layer = L.circleMarker([f.lat, f.lng], {
-        radius: 7, fillColor: color, fillOpacity: 0.85, color: '#fff', weight: 2
-      });
-    } else { return; }
+      polyLayer.on('mouseover', () => { if (activeId !== f.id) polyLayer.setStyle({ fillOpacity: 0.55, weight: 3 }); });
+      polyLayer.on('mouseout',  () => { if (activeId !== f.id) polyLayer.setStyle({ fillOpacity: 0.35, weight: 2 }); });
+      polyLayer.on('click', () => selectField(f.id));
+      polyLayer.bindTooltip(tooltipHtml, { sticky: true });
+      polyGroup.addLayer(polyLayer);
+    }
 
-    layer.on('click', () => selectField(f.id));
-    layer.bindTooltip(`<b>${f.name}</b><br>${f.owner_name||'–'} · ${f.crop||'–'}`, { sticky: true });
-    layerMap[f.id] = layer;
-    if (f.geojson) polyGroup.addLayer(layer);
-    else           pinGroup.addLayer(layer);
+    if (f.lat && f.lng) {
+      pinLayer = L.circleMarker([f.lat, f.lng], {
+        radius: f.geojson ? 5 : 7,
+        fillColor: color,
+        fillOpacity: 0.9,
+        color: '#fff',
+        weight: 2
+      });
+      pinLayer.on('click', () => selectField(f.id));
+      pinLayer.bindTooltip(tooltipHtml, { sticky: true });
+      pinGroup.addLayer(pinLayer);
+    }
+
+    if (!polyLayer && !pinLayer) return;
+    layerMap[f.id] = { polyLayer, pinLayer };
   });
 
   if (polyGroup.getLayers().length > 0) map.fitBounds(polyGroup.getBounds(), { padding: [20, 20] });
   else if (pinGroup.getLayers().length > 0) map.fitBounds(pinGroup.getBounds(), { padding: [20, 20] });
+  applyPinVisibility();
 }
 
-function updateMapVisibility(visible) {
-  const visIds = new Set(visible.map(f => f.id));
-  Object.entries(layerMap).forEach(([id, layer]) => {
-    const show = visIds.has(Number(id));
-    if (show && !polyGroup.hasLayer(layer) && !pinGroup.hasLayer(layer)) {
-      layer._featureGroup === pinGroup ? pinGroup.addLayer(layer) : polyGroup.addLayer(layer);
-    } else if (!show) {
-      polyGroup.removeLayer(layer); pinGroup.removeLayer(layer);
+function shouldShowPin(entry) {
+  if (!entry || !entry.pinLayer) return false;
+  // Centroid-only fields keep dot always.
+  if (!entry.polyLayer) return true;
+  // For polygon fields: dots are only for localization at low zoom.
+  return map.getZoom() <= DOT_LOW_ZOOM_MAX;
+}
+
+function applyPinVisibility() {
+  Object.entries(layerMap).forEach(function(pair) {
+    const id = Number(pair[0]);
+    const entry = pair[1];
+    const pin = entry ? entry.pinLayer : null;
+    if (!pin) return;
+    const visible = visibleFieldIds.has(id) && shouldShowPin(entry);
+    if (visible) {
+      if (!pinGroup.hasLayer(pin)) pinGroup.addLayer(pin);
+    } else if (pinGroup.hasLayer(pin)) {
+      pinGroup.removeLayer(pin);
     }
   });
 }
 
+function updateMapVisibility(visible) {
+  const visIds = new Set(visible.map(f => f.id));
+  Object.entries(layerMap).forEach(([id, layers]) => {
+    const show = visIds.has(Number(id));
+    const polyLayer = layers && layers.polyLayer ? layers.polyLayer : null;
+    const pinLayer = layers && layers.pinLayer ? layers.pinLayer : null;
+    if (show) {
+      if (polyLayer && !polyGroup.hasLayer(polyLayer)) polyGroup.addLayer(polyLayer);
+      if (pinLayer && !pinGroup.hasLayer(pinLayer)) pinGroup.addLayer(pinLayer);
+    } else {
+      if (polyLayer) polyGroup.removeLayer(polyLayer);
+      if (pinLayer) pinGroup.removeLayer(pinLayer);
+    }
+  });
+  applyPinVisibility();
+}
+
 function highlightLayer(id, on) {
-  const layer = layerMap[id];
-  if (!layer) return;
-  if (layer.setStyle) {
-    layer.setStyle(on
+  const layers = layerMap[id];
+  if (!layers) return;
+  const field = allFields.find(f => f.id === id);
+  const color = ownerColor(field ? field.owner_id : null);
+  if (layers.polyLayer && layers.polyLayer.setStyle) {
+    layers.polyLayer.setStyle(on
       ? { fillOpacity: 0.65, weight: 3, color: '#fff' }
-      : { fillOpacity: 0.35, weight: 2, color: ownerColor(allFields.find(f=>f.id===id)?.owner_id) }
+      : { fillOpacity: 0.35, weight: 2, color: color, fillColor: color, opacity: 0.85 }
+    );
+  }
+  if (layers.pinLayer && layers.pinLayer.setStyle) {
+    layers.pinLayer.setStyle(on
+      ? { radius: 8, fillOpacity: 1, color: '#ffffff', weight: 2.5 }
+      : { radius: field && field.geojson ? 5 : 7, fillOpacity: 0.9, color: '#ffffff', weight: 2 }
     );
   }
 }
 
 function zoomToField(f) {
-  const layer = layerMap[f.id];
-  if (!layer) return;
-  if (layer.getBounds) map.fitBounds(layer.getBounds(), { padding: [40, 40], maxZoom: 16 });
-  else map.setView([f.lat, f.lng], 15);
+  const layers = layerMap[f.id];
+  if (!layers) return;
+  if (layers.polyLayer && typeof layers.polyLayer.getBounds === 'function') {
+    map.fitBounds(layers.polyLayer.getBounds(), { padding: [40, 40], maxZoom: 16 });
+    return;
+  }
+  if (layers.pinLayer && f.lat && f.lng) {
+    map.setView([f.lat, f.lng], 15);
+  }
 }
 
 // ── Field list ────────────────────────────────────────────────────────────
 function renderList(fields) {
   const el = document.getElementById('field-list');
+  const total = fields.length;
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+  listPage = Math.max(1, Math.min(listPage, totalPages));
+  const start = (listPage - 1) * LIST_PAGE_SIZE;
+  const pageRows = fields.slice(start, start + LIST_PAGE_SIZE);
   if (!fields.length) {
     el.innerHTML = `<div class="field-item-empty">${t('no_results')}</div>`;
+    renderListPager(0, 0, 0, 1, 1);
     return;
   }
-  el.innerHTML = fields.map(f => {
+  el.innerHTML = pageRows.map(f => {
     const color = ownerColor(f.owner_id);
     const area  = f.area_ha ? `${f.area_ha.toFixed(2)} ha` : '';
     const sub   = [f.owner_name, f.crop].filter(Boolean).join(' · ');
@@ -454,6 +679,28 @@ function renderList(fields) {
       ${area ? `<div class="field-area">${area}</div>` : ''}
     </div>`;
   }).join('');
+  renderListPager(start + 1, Math.min(start + LIST_PAGE_SIZE, total), total, listPage, totalPages);
+}
+
+function renderListPager(from, to, total, page, totalPages) {
+  const wrap = document.getElementById('list-pager');
+  const info = document.getElementById('list-pager-info');
+  const prev = document.getElementById('list-pager-prev');
+  const next = document.getElementById('list-pager-next');
+  if (!wrap || !info || !prev || !next) return;
+  if (total <= LIST_PAGE_SIZE) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'flex';
+  info.textContent = t('pager_info', from, to, total, page, totalPages);
+  prev.disabled = page <= 1;
+  next.disabled = page >= totalPages;
+}
+
+function changeListPage(delta) {
+  listPage = Math.max(1, listPage + delta);
+  renderList(filteredFields);
 }
 
 function updateStats(fields) {
@@ -480,6 +727,7 @@ function selectField(id) {
   if (li) { li.classList.add('active'); li.scrollIntoView({ block: 'nearest' }); }
 
   showDetail(f);
+  applyPinVisibility();
 }
 
 function showDetail(f) {
@@ -498,6 +746,7 @@ function showDetail(f) {
   const lat      = f.lat ? f.lat.toFixed(5) : '–';
   const lng      = f.lng ? f.lng.toFixed(5) : '–';
   const mapsLink = f.lat && f.lng ? `https://maps.google.com/?q=${f.lat},${f.lng}` : '#';
+  const explorerLink = `/app?field_id=${f.id}`;
 
   document.getElementById('detail-body').innerHTML = `
     <!-- Owner -->
@@ -555,7 +804,11 @@ function showDetail(f) {
 
     <!-- Actions -->
     <div class="detail-actions">
-      <a href="${mapsLink}" target="_blank" class="btn btn-ghost btn-full">
+      <a href="${explorerLink}" class="btn btn-primary">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+        Biomass Explorer
+      </a>
+      <a href="${mapsLink}" target="_blank" class="btn btn-ghost">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 14 8 14s8-8.75 8-14a8 8 0 0 0-8-8z"/></svg>
         ${t('google_maps')}
       </a>
@@ -569,7 +822,7 @@ function showList() {
   document.getElementById('view-detail').style.display = 'none';
   document.getElementById('view-list').style.display = 'flex';
   document.querySelectorAll('.field-item').forEach(el => el.classList.remove('active'));
-  if (filteredFields.length) {
+  if (mapModeVisible && filteredFields.length) {
     const bounds = filteredFields
       .filter(f => layerMap[f.id])
       .map(f => layerMap[f.id])
@@ -580,34 +833,65 @@ function showList() {
       map.fitBounds(combined, { padding: [20, 20] });
     }
   }
+  applyPinVisibility();
 }
 
 // ── Legend ────────────────────────────────────────────────────────────────
 function buildLegend() {
-  const owners = ownersList.length
-    ? ownersList
-    : [...new Map(allFields.filter(f=>f.owner_id).map(f=>[f.owner_id,{id:f.owner_id,name:f.owner_name}])).values()];
+  if (role !== 'admin') {
+    document.getElementById('legend').style.display = 'none';
+    return;
+  }
+  const source = (filteredFields && filteredFields.length) ? filteredFields : allFields;
+  const byOwner = new Map();
+  source.forEach(f => {
+    if (!f.owner_id) return;
+    const prev = byOwner.get(f.owner_id) || { id: f.owner_id, name: f.owner_name || '', count: 0 };
+    prev.count += 1;
+    if (!prev.name && f.owner_name) prev.name = f.owner_name;
+    byOwner.set(f.owner_id, prev);
+  });
 
-  if (!owners.length) return;
+  const owners = Array.from(byOwner.values()).map(o => {
+    const full = (ownersList.find(x => x.id === o.id) || {});
+    return {
+      id: o.id,
+      name: o.name || full.name || full.email || ('#' + o.id),
+      count: o.count,
+    };
+  }).sort((a, b) => (b.count - a.count) || String(a.name).localeCompare(String(b.name), 'pl'));
 
   const el = document.getElementById('legend-items');
-  el.innerHTML = owners.slice(0, 12).map(o => {
+  const LIMIT = 10;
+  const topOwners = owners.slice(0, LIMIT);
+  const restOwners = owners.slice(LIMIT);
+  const restFieldsCount = restOwners.reduce((s, o) => s + (o.count || 0), 0);
+
+  let html = '';
+  if (owners.length > LIMIT) {
+    html += `<div class="legend-note">${t('legend_top_n', LIMIT, owners.length)}</div>`;
+  }
+
+  html += topOwners.map(o => {
     const col = ownerColor(o.id);
-    const fc  = (ownersList.find(x=>x.id===o.id)||{}).field_count ?? '';
-    const lbl = `${o.name || o.email || '#'+o.id}${fc ? ` (${fc})` : ''}`;
+    const lbl = `${o.name} (${o.count})`;
     return `<div class="legend-item" title="${escHtml(lbl)}">
       <div class="legend-dot" style="background:${col}"></div>
       <span>${escHtml(lbl)}</span>
     </div>`;
   }).join('');
 
-  // Unassigned
-  const noOwner = allFields.filter(f => !f.owner_id);
-  if (noOwner.length) {
-    el.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:#94a3b8"></div><span>${t('no_owner', noOwner.length)}</span></div>`;
+  if (restFieldsCount > 0) {
+    html += `<div class="legend-item"><div class="legend-dot" style="background:#94a3b8"></div><span>${t('legend_others', restOwners.length, restFieldsCount)}</span></div>`;
   }
 
-  document.getElementById('legend').style.display = '';
+  // Unassigned
+  const noOwner = source.filter(f => !f.owner_id);
+  if (noOwner.length) {
+    html += `<div class="legend-item"><div class="legend-dot" style="background:#64748b"></div><span>${t('no_owner', noOwner.length)}</span></div>`;
+  }
+  el.innerHTML = html;
+  document.getElementById('legend').style.display = html ? '' : 'none';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -634,10 +918,17 @@ window.addEventListener('langchange', () => {
   const cropSel  = document.getElementById('q-crop');
   if (ownerSel.options[0]) ownerSel.options[0].textContent = t('all_owners');
   if (cropSel.options[0])  cropSel.options[0].textContent  = t('all_crops');
+  if (role !== 'admin' && backText) {
+    backText.textContent = (typeof getCurrentLang === 'function' && getCurrentLang() === 'pl') ? 'Moje pola' : 'My Fields';
+  }
+  const toggleText = document.getElementById('map-toggle-text');
+  if (toggleText) toggleText.textContent = mapModeVisible ? t('list_back') : t('view_on_map');
 });
 
+map.on('zoomend', applyPinVisibility);
+
 // ── Init ──────────────────────────────────────────────────────────────────
-loadData();
+bootstrapAuth();
 </script>
 </body>
 </html>

@@ -5,13 +5,13 @@ from datetime import date as date_type, datetime, time as time_type
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Optional
 from schemas import AnalysisRequest, BiomassResponse
-from sqlalchemy.orm import Session
 from google.oauth2 import service_account
-import models
 import os
 import time
 import logging
+from psycopg2 import sql
 from dotenv import load_dotenv
+import database
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +102,18 @@ def _safe_float(value) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _ee_dict_number_or_default(data: ee.Dictionary, key: str, default: float) -> ee.Number:
+    """Read a numeric value from ee.Dictionary, replacing null/missing with default."""
+    value = ee.Dictionary(data).get(key)
+    return ee.Number(
+        ee.Algorithms.If(
+            ee.Algorithms.IsEqual(value, None),
+            default,
+            value,
+        )
+    )
 
 # ---------------------------------------------------------------------------
 # GEE initialisation
@@ -366,10 +378,10 @@ def _process_ls_date(ls_col, date_str, requested_landsat, region):
         # Lazy ee.Dictionary — resolved as part of the final getInfo() graph
         mm = ee.Image.cat([ndvi_l, lst_c]).reduceRegion(
             reducer=ee.Reducer.minMax(), geometry=region, scale=30, maxPixels=1e9)
-        ndvi_min = ee.Number(mm.get('ndvi_l_min'))
-        ndvi_max = ee.Number(mm.get('ndvi_l_max'))
-        lst_min  = ee.Number(mm.get('lst_c_min'))
-        lst_max  = ee.Number(mm.get('lst_c_max'))
+        ndvi_min = _ee_dict_number_or_default(mm, 'ndvi_l_min', -0.2)
+        ndvi_max = _ee_dict_number_or_default(mm, 'ndvi_l_max', 0.9)
+        lst_min = _ee_dict_number_or_default(mm, 'lst_c_min', 10.0)
+        lst_max = _ee_dict_number_or_default(mm, 'lst_c_max', 45.0)
         ndvi_rng = ndvi_max.subtract(ndvi_min).max(0.001)
         lst_rng  = lst_max.subtract(lst_min).max(0.001)
 
@@ -617,10 +629,10 @@ def _compute_core_summary_from_period_composites(
             mm = ee.Image.cat([ndvi_l, lst_c]).reduceRegion(
                 reducer=ee.Reducer.minMax(), geometry=region, scale=30, maxPixels=1e9
             )
-            ndvi_min = ee.Number(mm.get('ndvi_l_min', -0.2))
-            ndvi_max = ee.Number(mm.get('ndvi_l_max', 0.9))
-            lst_min = ee.Number(mm.get('lst_c_min', 10.0))
-            lst_max = ee.Number(mm.get('lst_c_max', 45.0))
+            ndvi_min = _ee_dict_number_or_default(mm, 'ndvi_l_min', -0.2)
+            ndvi_max = _ee_dict_number_or_default(mm, 'ndvi_l_max', 0.9)
+            lst_min = _ee_dict_number_or_default(mm, 'lst_c_min', 10.0)
+            lst_max = _ee_dict_number_or_default(mm, 'lst_c_max', 45.0)
             ndvi_rng = ndvi_max.subtract(ndvi_min).max(0.001)
             lst_rng = lst_max.subtract(lst_min).max(0.001)
 
@@ -712,8 +724,13 @@ def calculate_biomass_logic(request: AnalysisRequest) -> dict:
     log.info("Date discovery: S2=%d, Landsat=%d dates in %.1fs",
              len(s2_dates), len(ls_dates), t_dates - t0)
 
-    fast_core_mode = (len(request.indices) > 0 and
-                      set(request.indices).issubset(_FIELD_SCORE_CORE_INDICES))
+    # Fast core mode is useful for automatic scoring, but in manual/expert mode
+    # users expect per-date index values for charts and diagnostics.
+    fast_core_mode = (
+        (not request.manual_mode)
+        and len(request.indices) > 0
+        and set(request.indices).issubset(_FIELD_SCORE_CORE_INDICES)
+    )
 
     # -------------------------------------------------------------------
     #  Phase 2: Either fast composite summaries (core mode) OR
@@ -885,7 +902,7 @@ def calculate_biomass_logic(request: AnalysisRequest) -> dict:
 # ===========================================================================
 #  Database persistence
 # ===========================================================================
-def save_results_to_db(db: Session, result_data: dict):
+def save_results_to_db(result_data: dict):
     try:
         field_id = int(result_data["metadata"]["field_id"])
     except (TypeError, ValueError):
@@ -895,82 +912,126 @@ def save_results_to_db(db: Session, result_data: dict):
     processed_count = 0
     skipped_empty_count = 0
 
-    for item in result_data["timeseries"]:
-        processed_count += 1
-        measurement_date = date_type.fromisoformat(item["date"])
-        # captured_at: start of day (UTC) for compatibility with obs.vegetation_indices.captured_at TIMESTAMPTZ
-        captured_at = datetime.combine(measurement_date, time_type.min)
-        sensor = item.get("sensor", "")
-        source = sensor
-        values = item["values"]
-        if not values:
-            skipped_empty_count += 1
-            continue
+    schema_name = database.DB_SCHEMA
+    table_name_only = database.DB_TABLE_NAME
+    qualified_table = sql.SQL("{}.{}").format(
+        sql.Identifier(schema_name),
+        sql.Identifier(table_name_only),
+    )
 
-        existing = db.query(models.Measurement).filter(
-            models.Measurement.field_id == field_id,
-            models.Measurement.captured_at == measurement_date,
-            models.Measurement.sensor == sensor,
-        ).first()
+    upsert_query = sql.SQL(
+        """
+        INSERT INTO {table_name}
+            (field_id, captured_at, sensor, source, source_image_id,
+             ndvi, gndvi, evi, savi, ndre, canopy_cover, biomass_est,
+             cire, mtci, ireci, ndmi, nmdi, lst, vswi, tvdi, tci, vhi)
+        VALUES
+            (%s, %s, %s, %s, %s,
+             %s, %s, %s, %s, %s, %s, %s,
+             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (field_id, captured_at, sensor)
+        DO UPDATE SET
+            source = EXCLUDED.source,
+            source_image_id = EXCLUDED.source_image_id,
+            ndvi = EXCLUDED.ndvi,
+            gndvi = EXCLUDED.gndvi,
+            evi = EXCLUDED.evi,
+            savi = EXCLUDED.savi,
+            ndre = EXCLUDED.ndre,
+            canopy_cover = EXCLUDED.canopy_cover,
+            biomass_est = EXCLUDED.biomass_est,
+            cire = EXCLUDED.cire,
+            mtci = EXCLUDED.mtci,
+            ireci = EXCLUDED.ireci,
+            ndmi = EXCLUDED.ndmi,
+            nmdi = EXCLUDED.nmdi,
+            lst = EXCLUDED.lst,
+            vswi = EXCLUDED.vswi,
+            tvdi = EXCLUDED.tvdi,
+            tci = EXCLUDED.tci,
+            vhi = EXCLUDED.vhi
+        RETURNING (xmax = 0) AS inserted
+        """
+    ).format(table_name=qualified_table)
 
-        if existing:
-            modified = False
-            if getattr(existing, "captured_at", None) != measurement_date:
-                setattr(existing, "captured_at", measurement_date)
-                modified = True
-            for idx_name, val in values.items():
-                column_name = idx_name.lower()
-                if getattr(existing, column_name, None) != val:
-                    setattr(existing, column_name, val)
-                    modified = True
-            if getattr(existing, "canopy_cover", None) is None:
-                existing.canopy_cover = 1.0
-                modified = True
-            if getattr(existing, "biomass_est", None) is None:
-                existing.biomass_est = 1.0
-                modified = True
-            if getattr(existing, "source_image_id", None) in (None, ""):
-                existing.source_image_id = "1"
-                modified = True
-            if modified:
+    with database.pg_cursor(write=True) as cur:
+        for item in result_data["timeseries"]:
+            processed_count += 1
+            measurement_date = date_type.fromisoformat(item["date"])
+            # captured_at: start of day (UTC) for compatibility with TIMESTAMPTZ tables.
+            captured_at = datetime.combine(measurement_date, time_type.min)
+            sensor = item.get("sensor", "")
+            values = item["values"]
+            if not values:
+                skipped_empty_count += 1
+                continue
+
+            cur.execute(
+                upsert_query,
+                (
+                    field_id,
+                    captured_at,
+                    sensor,
+                    "GEE",
+                    item.get("source_image_id") or "1",
+                    values.get("NDVI"),
+                    values.get("GNDVI"),
+                    values.get("EVI"),
+                    values.get("SAVI"),
+                    values.get("NDRE"),
+                    values.get("CANOPY_COVER", 1.0),
+                    values.get("BIOMASS_EST", 1.0),
+                    values.get("CIre"),
+                    values.get("MTCI"),
+                    values.get("IRECI"),
+                    values.get("NDMI"),
+                    values.get("NMDI"),
+                    values.get("LST"),
+                    values.get("VSWI"),
+                    values.get("TVDI"),
+                    values.get("TCI"),
+                    values.get("VHI"),
+                ),
+            )
+            inserted = cur.fetchone()[0]
+            if inserted:
+                new_count += 1
+            else:
                 updated_count += 1
-            continue
 
-        db_record = models.Measurement(
-            field_id=field_id,
-            captured_at=measurement_date,
-            sensor=sensor,
-            source="GEE",
-            source_image_id=item.get("source_image_id") or "1",
-            ndvi=values.get("NDVI"),
-            gndvi=values.get("GNDVI"),
-            evi=values.get("EVI"),
-            savi=values.get("SAVI"),
-            ndre=values.get("NDRE"),
-            canopy_cover=values.get("CANOPY_COVER", 1.0),
-            biomass_est=values.get("BIOMASS_EST", 1.0),
-            cire=values.get("CIre"),
-            mtci=values.get("MTCI"),
-            ireci=values.get("IRECI"),
-            ndmi=values.get("NDMI"),
-            nmdi=values.get("NMDI"),
-            # Landsat thermal / drought
-            lst=values.get("LST"),
-            vswi=values.get("VSWI"),
-            tvdi=values.get("TVDI"),
-            tci=values.get("TCI"),
-            vhi=values.get("VHI"),
-        )
-        db.add(db_record)
-        new_count += 1
-
-    db.commit()
-    table_name = models.Measurement.__table__.fullname
+    table_name = f"{schema_name}.{table_name_only}"
     print(
         f"DB status | table={table_name} | field_id={field_id} "
         f"| processed={processed_count} | skipped_empty={skipped_empty_count} "
         f"| new={new_count} | updated={updated_count}"
     )
+
+
+def get_history_from_db(field_id: int) -> list[dict]:
+    """Return persisted measurements for a field from configured PG table."""
+    schema_name = database.DB_SCHEMA
+    table_name_only = database.DB_TABLE_NAME
+    qualified_table = sql.SQL("{}.{}").format(
+        sql.Identifier(schema_name),
+        sql.Identifier(table_name_only),
+    )
+
+    query = sql.SQL("SELECT * FROM {} WHERE field_id = %s ORDER BY captured_at, id").format(qualified_table)
+    with database.pg_cursor() as cur:
+        cur.execute(query, (field_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+
+    payload = []
+    for row in rows:
+        item = dict(zip(cols, row))
+        for key, value in list(item.items()):
+            if hasattr(value, "isoformat") and value is not None:
+                item[key] = value.isoformat()
+        captured_at = item.get("captured_at")
+        item["date"] = captured_at.split("T")[0] if isinstance(captured_at, str) else captured_at
+        payload.append(item)
+    return payload
 
 
 # ===========================================================================
@@ -1016,10 +1077,10 @@ def _build_stress_hotspot_image(region, s_date, e_date, cloud_cover, include_lan
             mm = ee.Image.cat([ndvi_l, lst_c]).reduceRegion(
                 reducer=ee.Reducer.minMax(), geometry=region, scale=30, maxPixels=1e9
             )
-            ndvi_min = ee.Number(mm.get('ndvi_l_min', -0.2))
-            ndvi_max = ee.Number(mm.get('ndvi_l_max', 0.9))
-            lst_min = ee.Number(mm.get('lst_c_min', 10.0))
-            lst_max = ee.Number(mm.get('lst_c_max', 45.0))
+            ndvi_min = _ee_dict_number_or_default(mm, 'ndvi_l_min', -0.2)
+            ndvi_max = _ee_dict_number_or_default(mm, 'ndvi_l_max', 0.9)
+            lst_min = _ee_dict_number_or_default(mm, 'lst_c_min', 10.0)
+            lst_max = _ee_dict_number_or_default(mm, 'lst_c_max', 45.0)
             ndvi_rng = ndvi_max.subtract(ndvi_min).max(0.001)
             lst_rng = lst_max.subtract(lst_min).max(0.001)
 
@@ -1145,10 +1206,10 @@ def generate_tile_url(request: AnalysisRequest, index_name: str) -> dict:
         elif index_name in ("TVDI", "TCI", "VHI"):
             mm = ee.Image.cat([ndvi_l, lst_c]).reduceRegion(
                 reducer=ee.Reducer.minMax(), geometry=region, scale=30, maxPixels=1e9)
-            ndvi_min = ee.Number(mm.get('ndvi_l_min'))
-            ndvi_max = ee.Number(mm.get('ndvi_l_max'))
-            lst_min  = ee.Number(mm.get('lst_c_min'))
-            lst_max  = ee.Number(mm.get('lst_c_max'))
+            ndvi_min = _ee_dict_number_or_default(mm, 'ndvi_l_min', -0.2)
+            ndvi_max = _ee_dict_number_or_default(mm, 'ndvi_l_max', 0.9)
+            lst_min = _ee_dict_number_or_default(mm, 'lst_c_min', 10.0)
+            lst_max = _ee_dict_number_or_default(mm, 'lst_c_max', 45.0)
             ndvi_rng = ndvi_max.subtract(ndvi_min).max(0.001)
             lst_rng  = lst_max.subtract(lst_min).max(0.001)
 
@@ -1365,10 +1426,10 @@ def _build_ls_layers(image, indices, region):
             if needs_mm and not mm_done:
                 mm = ee.Image.cat([ndvi_l, lst_c]).reduceRegion(
                     reducer=ee.Reducer.minMax(), geometry=region, scale=30, maxPixels=1e9)
-                ndvi_min = ee.Number(mm.get('ndvi_l_min'))
-                ndvi_max = ee.Number(mm.get('ndvi_l_max'))
-                lst_min  = ee.Number(mm.get('lst_c_min'))
-                lst_max  = ee.Number(mm.get('lst_c_max'))
+                ndvi_min = _ee_dict_number_or_default(mm, 'ndvi_l_min', -0.2)
+                ndvi_max = _ee_dict_number_or_default(mm, 'ndvi_l_max', 0.9)
+                lst_min = _ee_dict_number_or_default(mm, 'lst_c_min', 10.0)
+                lst_max = _ee_dict_number_or_default(mm, 'lst_c_max', 45.0)
                 ndvi_rng = ndvi_max.subtract(ndvi_min).max(0.001)
                 lst_rng  = lst_max.subtract(lst_min).max(0.001)
                 mm_done = True

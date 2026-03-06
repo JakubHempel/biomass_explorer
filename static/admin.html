@@ -46,6 +46,28 @@ th{background:#f8fafc;padding:10px 16px;text-align:left;font-size:12px;font-weig
 td{padding:12px 16px;border-bottom:1px solid var(--border-light, #f1f5f9);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:#fafbfd}
+.th-sort{cursor:pointer;user-select:none}
+.th-sort:hover{color:var(--text)}
+.th-sort-ind{font-size:11px;opacity:.7;margin-left:4px}
+.fields-filter-row th{padding:6px 8px;background:#f8fafc;border-bottom:1px solid var(--border)}
+.fields-filter-input{
+  width:100%;padding:6px 8px;border:1px solid var(--border-input);border-radius:6px;
+  font-size:12px;background:#fff;color:var(--text);outline:none;font-family:inherit
+}
+.fields-filter-input:focus{border-color:var(--primary)}
+.table-pager{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding:10px 14px;border-top:1px solid var(--border);background:#f8fafc;
+}
+.table-pager-info{font-size:12px;color:var(--text-secondary)}
+.table-pager-actions{display:flex;gap:6px}
+.btn-pager{
+  padding:5px 10px;border-radius:7px;border:1px solid var(--border-input);
+  background:#fff;color:var(--text-secondary);font-size:12px;font-weight:600;cursor:pointer
+}
+.btn-pager:disabled{opacity:.45;cursor:not-allowed}
+body.dark-mode .table-pager{background:#0f172a;border-color:var(--border)}
+body.dark-mode .btn-pager{background:#1e293b;border-color:#334155;color:#cbd5e1}
 
 /* ---- badges ---- */
 .badge{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px}
@@ -67,6 +89,23 @@ tr:hover td{background:#fafbfd}
 .btn-ghost:hover{background:var(--bg);border-color:var(--border-input);color:var(--text)}
 .btn-danger{background:none;border:1.5px solid #fca5a5;color:var(--error)}
 .btn-danger:hover{background:var(--error-bg)}
+.btn-open-explorer{
+  background:none;
+  border:1.5px solid #64748b;
+  color:#334155;
+}
+.btn-open-explorer:hover{
+  background:rgba(30,64,175,0.08);
+  border-color:#1e40af;
+  color:#1e3a8a;
+}
+body.dark-mode .btn-open-explorer{
+  border-color:#334155;
+  color:#cbd5e1;
+}
+body.dark-mode .btn-open-explorer:hover{
+  color:#dbeafe;
+}
 
 /* ---- empty state ---- */
 .empty-state{text-align:center;padding:48px 24px;color:var(--text-muted)}
@@ -110,7 +149,7 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
 <!-- App Header -->
 <header class="app-header">
   <div class="app-header-inner">
-    <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
+    <a href="/app" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
       <img src="/static/radscan_logo_color.jpg" class="app-logo" alt="Radscan">
     </a>
     <div>
@@ -151,7 +190,7 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
       </p>
     </div>
     <div class="info-links">
-      <a href="/" class="info-link-btn">&#127968; <span data-i18n="info_link_map">Mapa</span></a>
+      <a href="/app" class="info-link-btn">&#127968; <span data-i18n="info_link_map">Mapa</span></a>
       <a href="/fields" class="info-link-btn">&#128198; <span data-i18n="info_link_fields">Pola</span></a>
       <a href="/field-editor" class="info-link-btn">&#9998; <span data-i18n="info_link_editor">Edytor pól</span></a>
     </div>
@@ -167,11 +206,11 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
 
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('users')">
+    <button class="tab active" id="tab-btn-users" onclick="switchTab('users')">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px;margin-right:6px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span data-i18n="tab_users">Użytkownicy</span>
     </button>
-    <button class="tab" onclick="switchTab('fields')">
+    <button class="tab" id="tab-btn-fields" onclick="switchTab('fields')">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-2px;margin-right:6px"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
       <span data-i18n="tab_fields">Pola uprawne</span>
     </button>
@@ -194,18 +233,47 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
         <table>
           <thead>
             <tr>
-              <th data-i18n="th_id">#</th>
-              <th data-i18n="th_username">Użytkownik</th>
-              <th data-i18n="th_email">E-mail</th>
-              <th data-i18n="th_fullname">Imię i nazwisko</th>
-              <th data-i18n="th_role">Rola</th>
-              <th data-i18n="th_status">Status</th>
-              <th data-i18n="th_created">Utworzony</th>
+              <th class="th-sort" onclick="setUserSort('id')"><span data-i18n="th_id">#</span><span class="th-sort-ind" id="u-sort-ind-id"></span></th>
+              <th class="th-sort" onclick="setUserSort('username')"><span data-i18n="th_username">Użytkownik</span><span class="th-sort-ind" id="u-sort-ind-username"></span></th>
+              <th class="th-sort" onclick="setUserSort('email')"><span data-i18n="th_email">E-mail</span><span class="th-sort-ind" id="u-sort-ind-email"></span></th>
+              <th class="th-sort" onclick="setUserSort('full_name')"><span data-i18n="th_fullname">Imię i nazwisko</span><span class="th-sort-ind" id="u-sort-ind-full_name"></span></th>
+              <th class="th-sort" onclick="setUserSort('role')"><span data-i18n="th_role">Rola</span><span class="th-sort-ind" id="u-sort-ind-role"></span></th>
+              <th class="th-sort" onclick="setUserSort('is_active')"><span data-i18n="th_status">Status</span><span class="th-sort-ind" id="u-sort-ind-is_active"></span></th>
+              <th class="th-sort" onclick="setUserSort('created_at')"><span data-i18n="th_created">Utworzony</span><span class="th-sort-ind" id="u-sort-ind-created_at"></span></th>
               <th data-i18n="th_actions">Akcje</th>
+            </tr>
+            <tr class="fields-filter-row">
+              <th><input class="fields-filter-input" id="uflt-id" placeholder="#" oninput="updateUserFiltersFromUi()"></th>
+              <th><input class="fields-filter-input" id="uflt-username" data-i18n-ph="ph_flt_user" placeholder="user..." oninput="updateUserFiltersFromUi()"></th>
+              <th><input class="fields-filter-input" id="uflt-email" data-i18n-ph="ph_flt_email" placeholder="email..." oninput="updateUserFiltersFromUi()"></th>
+              <th><input class="fields-filter-input" id="uflt-fullname" data-i18n-ph="ph_flt_name" placeholder="name..." oninput="updateUserFiltersFromUi()"></th>
+              <th>
+                <select class="fields-filter-input" id="uflt-role" onchange="updateUserFiltersFromUi()">
+                  <option value="" data-i18n="flt_all">all</option>
+                  <option value="admin">admin</option>
+                  <option value="user">user</option>
+                </select>
+              </th>
+              <th>
+                <select class="fields-filter-input" id="uflt-status" onchange="updateUserFiltersFromUi()">
+                  <option value="" data-i18n="flt_all">all</option>
+                  <option value="active">active</option>
+                  <option value="inactive">inactive</option>
+                </select>
+              </th>
+              <th><input class="fields-filter-input" id="uflt-created" data-i18n-ph="ph_flt_created" placeholder="YYYY-MM-DD..." oninput="updateUserFiltersFromUi()"></th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="users-tbody"></tbody>
         </table>
+        <div class="table-pager" id="users-pager" style="display:none">
+          <div class="table-pager-info" id="users-pager-info">1-10 / 10 (page 1/1)</div>
+          <div class="table-pager-actions">
+            <button type="button" class="btn-pager" id="users-pager-prev" data-i18n="pager_prev" onclick="changeUsersPage(-1)">Prev</button>
+            <button type="button" class="btn-pager" id="users-pager-next" data-i18n="pager_next" onclick="changeUsersPage(1)">Next</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -233,16 +301,31 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
         <table>
           <thead>
             <tr>
-              <th data-i18n="th_field_id">ID</th>
-              <th data-i18n="th_field_name">Nazwa pola</th>
-              <th data-i18n="th_latlng">Lat / Lng</th>
-              <th data-i18n="th_area">Pow. (ha)</th>
-              <th data-i18n="th_field_created">Utworzone</th>
+              <th class="th-sort" onclick="setFieldSort('id')"><span data-i18n="th_field_id">ID</span><span class="th-sort-ind" id="sort-ind-id"></span></th>
+              <th class="th-sort" onclick="setFieldSort('name')"><span data-i18n="th_field_name">Nazwa pola</span><span class="th-sort-ind" id="sort-ind-name"></span></th>
+              <th class="th-sort" onclick="setFieldSort('latlng')"><span data-i18n="th_latlng">Lat / Lng</span><span class="th-sort-ind" id="sort-ind-latlng"></span></th>
+              <th class="th-sort" onclick="setFieldSort('area_ha')"><span data-i18n="th_area">Pow. (ha)</span><span class="th-sort-ind" id="sort-ind-area_ha"></span></th>
+              <th class="th-sort" onclick="setFieldSort('created_at')"><span data-i18n="th_field_created">Utworzone</span><span class="th-sort-ind" id="sort-ind-created_at"></span></th>
               <th data-i18n="th_actions">Akcje</th>
+            </tr>
+            <tr class="fields-filter-row">
+              <th><input class="fields-filter-input" id="flt-id" placeholder="#" oninput="updateFieldFiltersFromUi()"></th>
+              <th><input class="fields-filter-input" id="flt-name" data-i18n-ph="ph_flt_field" placeholder="field..." oninput="updateFieldFiltersFromUi()"></th>
+              <th><input class="fields-filter-input" id="flt-latlng" data-i18n-ph="ph_flt_latlng" placeholder="lat/lng..." oninput="updateFieldFiltersFromUi()"></th>
+              <th><input class="fields-filter-input" id="flt-area" data-i18n-ph="ph_flt_area" placeholder="ha..." oninput="updateFieldFiltersFromUi()"></th>
+              <th><input class="fields-filter-input" id="flt-created" data-i18n-ph="ph_flt_created" placeholder="YYYY-MM-DD..." oninput="updateFieldFiltersFromUi()"></th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="fields-tbody"></tbody>
         </table>
+        <div class="table-pager" id="fields-pager" style="display:none">
+          <div class="table-pager-info" id="fields-pager-info">1-10 / 10 (page 1/1)</div>
+          <div class="table-pager-actions">
+            <button type="button" class="btn-pager" id="fields-pager-prev" data-i18n="pager_prev" onclick="changeFieldsPage(-1)">Prev</button>
+            <button type="button" class="btn-pager" id="fields-pager-next" data-i18n="pager_next" onclick="changeFieldsPage(1)">Next</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -294,14 +377,26 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
 
 <script>
 const API = window.location.origin;
+if (typeof bmSetupSessionGuard === 'function') {
+  bmSetupSessionGuard({ logoutOnReload: false, timeoutMs: 30 * 60 * 1000 });
+}
 let token = localStorage.getItem('bm_token');
 let editingUserId = null;
 let cachedUsers = null;
 let cachedFields = null;
+let currentRole = (localStorage.getItem('bm_role') || 'user').toLowerCase();
+const MY_FIELDS_MODE = window.location.pathname === '/my-fields';
+let usersSort = { key: 'id', dir: 'asc' };
+let usersFilters = { id: '', username: '', email: '', full_name: '', role: '', status: '', created: '' };
+let usersPage = 1;
+let fieldsSort = { key: 'created_at', dir: 'desc' };
+let fieldsFilters = { id: '', name: '', latlng: '', area: '', created: '' };
+let fieldsPage = 1;
+const TABLE_PAGE_SIZE = 10;
 
 if (!token) { window.location.href = '/login'; }
 document.getElementById('username-badge').textContent = localStorage.getItem('bm_username') || '–';
-document.getElementById('role-badge').textContent = localStorage.getItem('bm_role') || 'user';
+document.getElementById('role-badge').textContent = currentRole;
 
 initLang();
 
@@ -325,11 +420,54 @@ function logout() {
   window.location.href = '/login';
 }
 
-function switchTab(name) {
+function applyMyFieldsLabels() {
+  if (!MY_FIELDS_MODE) return;
+  const isPl = (typeof getCurrentLang === 'function' ? getCurrentLang() : 'en') === 'pl';
+  const subtitle = document.querySelector('[data-i18n="admin_subtitle"]');
+  const title = document.querySelector('[data-i18n="admin_h1"]');
+  const desc = document.querySelector('[data-i18n="admin_desc"]');
+  const tabFields = document.querySelector('#tab-btn-fields [data-i18n="tab_fields"]');
+  if (subtitle) subtitle.textContent = isPl ? 'Moje pola' : 'My Fields';
+  if (title) title.textContent = isPl ? 'Moje pola' : 'My Fields';
+  if (desc) desc.textContent = isPl
+    ? 'Twórz i zarządzaj wyłącznie swoimi polami.'
+    : 'Create and manage only your own fields.';
+  if (tabFields) tabFields.textContent = isPl ? 'Moje pola' : 'My Fields';
+}
+
+function configureMyFieldsMode() {
+  const usersBtn = document.getElementById('tab-btn-users');
+  const usersPanel = document.getElementById('tab-users');
+  const fieldsBtn = document.getElementById('tab-btn-fields');
+  const userModal = document.getElementById('user-modal');
+  if (usersBtn) usersBtn.style.display = 'none';
+  if (usersPanel) usersPanel.style.display = 'none';
+  if (userModal) userModal.style.display = 'none';
+  if (fieldsBtn) fieldsBtn.classList.add('active');
+  applyMyFieldsLabels();
+}
+
+function activateTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  event.currentTarget.classList.add('active');
-  document.getElementById('tab-' + name).classList.add('active');
+  const tabBtn = document.getElementById('tab-btn-' + name);
+  const tabPanel = document.getElementById('tab-' + name);
+  if (tabBtn) tabBtn.classList.add('active');
+  if (tabPanel) tabPanel.classList.add('active');
+}
+
+function switchTab(name) {
+  if (MY_FIELDS_MODE && name === 'users') {
+    activateTab('fields');
+    loadFields();
+    return;
+  }
+  if (name === 'users' && currentRole !== 'admin') {
+    activateTab('fields');
+    loadFields();
+    return;
+  }
+  activateTab(name);
   if (name === 'fields') loadFields();
 }
 
@@ -343,17 +481,52 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function _num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function _cmp(a, b) {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+}
+
+function _paginate(rows, currentPage) {
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE));
+  const page = Math.max(1, Math.min(currentPage, totalPages));
+  const start = (page - 1) * TABLE_PAGE_SIZE;
+  const end = start + TABLE_PAGE_SIZE;
+  return {
+    page,
+    total,
+    totalPages,
+    from: total ? (start + 1) : 0,
+    to: Math.min(end, total),
+    rows: rows.slice(start, end),
+  };
+}
+
 // ── USERS ─────────────────────────────────────────────────────────────────────
 
 function renderUsersTable(users) {
   cachedUsers = users;
-  document.getElementById('users-count').textContent = t('n_users', users.length);
+  const rows = getFilteredSortedUsers(users);
+  document.getElementById('users-count').textContent = rows.length === users.length
+    ? t('n_users', users.length)
+    : `${rows.length} / ${users.length}`;
+  const paged = _paginate(rows, usersPage);
+  usersPage = paged.page;
   const tbody = document.getElementById('users-tbody');
-  if (!users.length) {
+  if (!paged.rows.length) {
     tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><p>${t('empty_users')}</p></div></td></tr>`;
+    renderUsersPager(paged);
     return;
   }
-  tbody.innerHTML = users.map(u => `
+  tbody.innerHTML = paged.rows.map(u => `
     <tr>
       <td>${u.id}</td>
       <td><strong>${esc(u.username)}</strong></td>
@@ -370,18 +543,116 @@ function renderUsersTable(users) {
       </td>
     </tr>
   `).join('');
+  renderUsersPager(paged);
+}
+
+function renderUsersPager(paged) {
+  const wrap = document.getElementById('users-pager');
+  const info = document.getElementById('users-pager-info');
+  const prev = document.getElementById('users-pager-prev');
+  const next = document.getElementById('users-pager-next');
+  if (!wrap || !info || !prev || !next) return;
+  if (paged.total <= TABLE_PAGE_SIZE) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'flex';
+  info.textContent = t('pager_info', paged.from, paged.to, paged.total, paged.page, paged.totalPages);
+  prev.disabled = paged.page <= 1;
+  next.disabled = paged.page >= paged.totalPages;
+}
+
+function changeUsersPage(delta) {
+  usersPage = Math.max(1, usersPage + delta);
+  if (cachedUsers !== null) renderUsersTable(cachedUsers);
+}
+
+function getFilteredSortedUsers(users) {
+  let rows = Array.isArray(users) ? users.slice() : [];
+  const f = usersFilters;
+
+  rows = rows.filter(u => {
+    const id = String(u.id ?? '');
+    const username = String(u.username ?? '').toLowerCase();
+    const email = String(u.email ?? '').toLowerCase();
+    const fullName = String(u.full_name ?? '').toLowerCase();
+    const role = String(u.role ?? '').toLowerCase();
+    const status = u.is_active ? 'active' : 'inactive';
+    const created = String(u.created_at ?? '').toLowerCase();
+
+    if (f.id && !id.includes(f.id)) return false;
+    if (f.username && !username.includes(f.username)) return false;
+    if (f.email && !email.includes(f.email)) return false;
+    if (f.full_name && !fullName.includes(f.full_name)) return false;
+    if (f.role && role !== f.role) return false;
+    if (f.status && status !== f.status) return false;
+    if (f.created && !created.includes(f.created)) return false;
+    return true;
+  });
+
+  const key = usersSort.key;
+  const dirMul = usersSort.dir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    let av = a[key];
+    let bv = b[key];
+    if (key === 'is_active') {
+      av = a.is_active ? 1 : 0;
+      bv = b.is_active ? 1 : 0;
+    }
+    return _cmp(av, bv) * dirMul;
+  });
+  return rows;
+}
+
+function refreshUserSortIndicators() {
+  ['id', 'username', 'email', 'full_name', 'role', 'is_active', 'created_at'].forEach(k => {
+    const el = document.getElementById(`u-sort-ind-${k}`);
+    if (!el) return;
+    el.textContent = usersSort.key === k ? (usersSort.dir === 'asc' ? '↑' : '↓') : '';
+  });
+}
+
+function setUserSort(key) {
+  if (usersSort.key === key) {
+    usersSort.dir = usersSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    usersSort.key = key;
+    usersSort.dir = (key === 'id' || key === 'created_at') ? 'desc' : 'asc';
+  }
+  usersPage = 1;
+  refreshUserSortIndicators();
+  if (cachedUsers !== null) renderUsersTable(cachedUsers);
+}
+
+function updateUserFiltersFromUi() {
+  usersFilters.id = String(document.getElementById('uflt-id')?.value || '').trim().toLowerCase();
+  usersFilters.username = String(document.getElementById('uflt-username')?.value || '').trim().toLowerCase();
+  usersFilters.email = String(document.getElementById('uflt-email')?.value || '').trim().toLowerCase();
+  usersFilters.full_name = String(document.getElementById('uflt-fullname')?.value || '').trim().toLowerCase();
+  usersFilters.role = String(document.getElementById('uflt-role')?.value || '').trim().toLowerCase();
+  usersFilters.status = String(document.getElementById('uflt-status')?.value || '').trim().toLowerCase();
+  usersFilters.created = String(document.getElementById('uflt-created')?.value || '').trim().toLowerCase();
+  usersPage = 1;
+  if (cachedUsers !== null) renderUsersTable(cachedUsers);
 }
 
 async function loadUsers() {
   const res = await apiFetch('/admin/users');
   if (!res) return;
+  if (res.status === 403) {
+    window.location.href = '/my-fields';
+    return;
+  }
   if (!res.ok) { showToast(t('no_admin_access'), 'error'); return; }
+  usersPage = 1;
+  refreshUserSortIndicators();
   renderUsersTable(await res.json());
 }
 
 // ── USER MODAL ────────────────────────────────────────────────────────────────
 
 function openUserModal() {
+  if (currentRole !== 'admin' || MY_FIELDS_MODE) return;
   editingUserId = null;
   document.getElementById('modal-title').textContent = t('modal_new_user');
   document.getElementById('f-password-label').dataset.i18n = 'lbl_password_new';
@@ -412,6 +683,7 @@ function openEditModal(u) {
 function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); }
 
 async function saveUser() {
+  if (currentRole !== 'admin' || MY_FIELDS_MODE) return;
   const errEl = document.getElementById('modal-error');
   errEl.style.display = 'none';
   const btn = document.getElementById('btn-save-user');
@@ -454,6 +726,7 @@ async function saveUser() {
 }
 
 async function deactivateUser(id, username) {
+  if (currentRole !== 'admin' || MY_FIELDS_MODE) return;
   if (!confirm(t('confirm_deactivate', username))) return;
   const res = await apiFetch(`/admin/users/${id}`, { method: 'DELETE' });
   if (res && res.ok) { showToast(t('toast_deactivated')); loadUsers(); }
@@ -464,14 +737,21 @@ async function deactivateUser(id, username) {
 
 function renderFieldsTable(fields) {
   cachedFields = fields;
-  document.getElementById('fields-count').textContent = t('n_fields', fields.length);
+  const rows = getFilteredSortedFields(fields);
+  document.getElementById('fields-count').textContent = rows.length === fields.length
+    ? t('n_fields', fields.length)
+    : `${rows.length} / ${fields.length}`;
+  const paged = _paginate(rows, fieldsPage);
+  fieldsPage = paged.page;
   const tbody = document.getElementById('fields-tbody');
-  if (!fields.length) {
+  if (!paged.rows.length) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state" style="padding:40px"><p>${t('empty_fields')}</p></div></td></tr>`;
+    renderFieldsPager(paged);
     return;
   }
-  tbody.innerHTML = fields.map(f => {
-    const areaHa = f.area ? (f.area / 10000).toFixed(2) : '–';
+  tbody.innerHTML = paged.rows.map(f => {
+    const areaHaVal = _num(f.area_ha);
+    const areaHa = areaHaVal != null ? areaHaVal.toFixed(2) : '–';
     const lat = f.lat ? Number(f.lat).toFixed(5) : '–';
     const lng = f.lng ? Number(f.lng).toFixed(5) : '–';
     return `
@@ -481,22 +761,121 @@ function renderFieldsTable(fields) {
       <td class="coord">${lat}, ${lng}</td>
       <td>${areaHa}</td>
       <td>${f.created_at || '–'}</td>
-      <td><a class="btn btn-ghost btn-sm" href="/?field_id=${f.id}" style="text-decoration:none">${t('open')}</a></td>
+      <td><a class="btn btn-sm btn-open-explorer" href="/app?field_id=${f.id}" style="text-decoration:none" title="${esc(t('open_field_analysis_title'))}">${t('open_field_analysis')}</a></td>
     </tr>`;
   }).join('');
+  renderFieldsPager(paged);
+}
+
+function renderFieldsPager(paged) {
+  const wrap = document.getElementById('fields-pager');
+  const info = document.getElementById('fields-pager-info');
+  const prev = document.getElementById('fields-pager-prev');
+  const next = document.getElementById('fields-pager-next');
+  if (!wrap || !info || !prev || !next) return;
+  if (paged.total <= TABLE_PAGE_SIZE) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'flex';
+  info.textContent = t('pager_info', paged.from, paged.to, paged.total, paged.page, paged.totalPages);
+  prev.disabled = paged.page <= 1;
+  next.disabled = paged.page >= paged.totalPages;
+}
+
+function changeFieldsPage(delta) {
+  fieldsPage = Math.max(1, fieldsPage + delta);
+  if (cachedFields !== null) renderFieldsTable(cachedFields);
+}
+
+function getFilteredSortedFields(fields) {
+  let rows = Array.isArray(fields) ? fields.slice() : [];
+  const f = fieldsFilters;
+
+  rows = rows.filter(r => {
+    const id = String(r.id ?? '');
+    const name = String(r.name ?? '').toLowerCase();
+    const lat = r.lat != null ? Number(r.lat).toFixed(5) : '';
+    const lng = r.lng != null ? Number(r.lng).toFixed(5) : '';
+    const latlng = `${lat}, ${lng}`.toLowerCase();
+    const area = r.area_ha != null ? Number(r.area_ha).toFixed(2) : '';
+    const created = String(r.created_at ?? '').toLowerCase();
+
+    if (f.id && !id.includes(f.id)) return false;
+    if (f.name && !name.includes(f.name)) return false;
+    if (f.latlng && !latlng.includes(f.latlng)) return false;
+    if (f.area && !area.includes(f.area)) return false;
+    if (f.created && !created.includes(f.created)) return false;
+    return true;
+  });
+
+  const key = fieldsSort.key;
+  const dirMul = fieldsSort.dir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    let av, bv;
+    if (key === 'latlng') {
+      const alat = _num(a.lat), alng = _num(a.lng);
+      const blat = _num(b.lat), blng = _num(b.lng);
+      av = alat == null || alng == null ? null : (alat * 1000 + alng);
+      bv = blat == null || blng == null ? null : (blat * 1000 + blng);
+    } else if (key === 'area_ha') {
+      av = _num(a.area_ha);
+      bv = _num(b.area_ha);
+    } else {
+      av = a[key];
+      bv = b[key];
+    }
+    return _cmp(av, bv) * dirMul;
+  });
+  return rows;
+}
+
+function refreshFieldSortIndicators() {
+  ['id', 'name', 'latlng', 'area_ha', 'created_at'].forEach(k => {
+    const el = document.getElementById(`sort-ind-${k}`);
+    if (!el) return;
+    el.textContent = fieldsSort.key === k ? (fieldsSort.dir === 'asc' ? '↑' : '↓') : '';
+  });
+}
+
+function setFieldSort(key) {
+  if (fieldsSort.key === key) {
+    fieldsSort.dir = fieldsSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    fieldsSort.key = key;
+    fieldsSort.dir = (key === 'created_at' || key === 'id') ? 'desc' : 'asc';
+  }
+  fieldsPage = 1;
+  refreshFieldSortIndicators();
+  if (cachedFields !== null) renderFieldsTable(cachedFields);
+}
+
+function updateFieldFiltersFromUi() {
+  fieldsFilters.id = String(document.getElementById('flt-id')?.value || '').trim().toLowerCase();
+  fieldsFilters.name = String(document.getElementById('flt-name')?.value || '').trim().toLowerCase();
+  fieldsFilters.latlng = String(document.getElementById('flt-latlng')?.value || '').trim().toLowerCase();
+  fieldsFilters.area = String(document.getElementById('flt-area')?.value || '').trim().toLowerCase();
+  fieldsFilters.created = String(document.getElementById('flt-created')?.value || '').trim().toLowerCase();
+  fieldsPage = 1;
+  if (cachedFields !== null) renderFieldsTable(cachedFields);
 }
 
 async function loadFields() {
   const res = await apiFetch('/api/fields');
   if (!res) return;
+  fieldsPage = 1;
+  refreshFieldSortIndicators();
   renderFieldsTable(res.ok ? await res.json() : []);
 }
 
 // ── LANG CHANGE ───────────────────────────────────────────────────────────────
 
 window.addEventListener('langchange', () => {
+  applyMyFieldsLabels();
   if (cachedUsers  !== null) renderUsersTable(cachedUsers);
   if (cachedFields !== null) renderFieldsTable(cachedFields);
+  refreshUserSortIndicators();
+  refreshFieldSortIndicators();
   // Keep modal label in sync if open
   if (document.getElementById('user-modal').classList.contains('open')) {
     const lbl = document.getElementById('f-password-label');
@@ -515,7 +894,35 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && document.getElementById('user-modal').classList.contains('open')) saveUser();
 });
 
-loadUsers();
+async function bootstrapAdminPage() {
+  try {
+    const meRes = await apiFetch('/auth/me');
+    if (!meRes || !meRes.ok) {
+      logout();
+      return;
+    }
+    const me = await meRes.json();
+    currentRole = (me.role || currentRole || 'user').toLowerCase();
+    localStorage.setItem('bm_role', currentRole);
+    document.getElementById('role-badge').textContent = currentRole;
+    if (currentRole !== 'admin' && !MY_FIELDS_MODE) {
+      window.location.href = '/my-fields';
+      return;
+    }
+    if (MY_FIELDS_MODE) {
+      configureMyFieldsMode();
+      activateTab('fields');
+      loadFields();
+      return;
+    }
+    activateTab('users');
+    loadUsers();
+  } catch (_) {
+    logout();
+  }
+}
+
+bootstrapAdminPage();
 </script>
 </body>
 </html>

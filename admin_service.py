@@ -1,7 +1,7 @@
 """
 Admin & field-editor service layer.
 
-- User CRUD (SQLite via SQLAlchemy)
+- User CRUD in PostgreSQL (users.accounts)
 - save_field_to_pg: inserts a drawn polygon into:
     core.fields           – field record
     geo.fields_location   – centroid pin
@@ -9,38 +9,22 @@ Admin & field-editor service layer.
 """
 from __future__ import annotations
 
-import json
-import os
 import re
 from typing import Optional
 
-import psycopg2
 from pyproj import Geod
 from shapely.geometry import shape
-from sqlalchemy.orm import Session
 
 import auth
-import models
+import database
 import schemas
 
 
 # ---------------------------------------------------------------------------
-# PG connection helper (uses app user from db_config.json)
+# PG connection helper (single shared path from database.py)
 # ---------------------------------------------------------------------------
-_DB_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "db_config.json")
-
-
 def _get_pg_conn():
-    with open(_DB_CONFIG_PATH, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    return psycopg2.connect(
-        host=cfg["host"],
-        port=cfg["port"],
-        database=cfg["database"],
-        user=cfg["user"],
-        password=cfg["password"],
-        sslmode=cfg.get("sslmode", "prefer"),
-    )
+    return database.get_pg_conn()
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +34,7 @@ def _get_pg_conn():
 _USER_SELECT = (
     "SELECT id, username, email, full_name, hashed_password, role, is_active, "
     "to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') "
-    "FROM users.accounts"
+    f"FROM {database.USERS_ACCOUNTS_TABLE}"
 )
 
 
@@ -89,20 +73,20 @@ def create_user(data: schemas.UserCreate) -> dict:
         with conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT 1 FROM users.accounts WHERE username = %s", (data.username,)
+                    f"SELECT 1 FROM {database.USERS_ACCOUNTS_TABLE} WHERE username = %s", (data.username,)
                 )
                 if cur.fetchone():
                     raise ValueError(f"Username '{data.username}' already exists")
                 if data.email:
                     cur.execute(
-                        "SELECT 1 FROM users.accounts WHERE lower(email) = lower(%s)",
+                        f"SELECT 1 FROM {database.USERS_ACCOUNTS_TABLE} WHERE lower(email) = lower(%s)",
                         (data.email,),
                     )
                     if cur.fetchone():
                         raise ValueError(f"Email '{data.email}' already exists")
                 cur.execute(
-                    """
-                    INSERT INTO users.accounts
+                    f"""
+                    INSERT INTO {database.USERS_ACCOUNTS_TABLE}
                         (username, email, full_name, hashed_password, role, is_active)
                     VALUES (%s, %s, %s, %s, %s, TRUE)
                     RETURNING id
@@ -137,7 +121,7 @@ def update_user(user_id: int, data: schemas.UserUpdate) -> Optional[dict]:
                     return get_user(user_id)
                 params.append(user_id)
                 cur.execute(
-                    f"UPDATE users.accounts SET {', '.join(sets)} WHERE id = %s",
+                    f"UPDATE {database.USERS_ACCOUNTS_TABLE} SET {', '.join(sets)} WHERE id = %s",
                     params,
                 )
         return get_user(user_id)
@@ -151,7 +135,7 @@ def delete_user(user_id: int) -> bool:
         with conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE users.accounts SET is_active = FALSE WHERE id = %s",
+                    f"UPDATE {database.USERS_ACCOUNTS_TABLE} SET is_active = FALSE WHERE id = %s",
                     (user_id,),
                 )
                 return cur.rowcount > 0
@@ -165,11 +149,11 @@ def ensure_default_admin() -> None:
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM users.accounts")
+                cur.execute(f"SELECT COUNT(*) FROM {database.USERS_ACCOUNTS_TABLE}")
                 if cur.fetchone()[0] == 0:
                     cur.execute(
-                        """
-                        INSERT INTO users.accounts
+                        f"""
+                        INSERT INTO {database.USERS_ACCOUNTS_TABLE}
                             (username, full_name, hashed_password, role, is_active)
                         VALUES ('admin', 'Administrator', %s, 'admin', TRUE)
                         ON CONFLICT DO NOTHING
@@ -213,7 +197,7 @@ def ensure_users_from_owners() -> int:
                         continue
                     # Skip if already exists by email
                     cur.execute(
-                        "SELECT 1 FROM users.accounts WHERE lower(email) = lower(%s)",
+                        f"SELECT 1 FROM {database.USERS_ACCOUNTS_TABLE} WHERE lower(email) = lower(%s)",
                         (email,),
                     )
                     if cur.fetchone():
@@ -225,7 +209,7 @@ def ensure_users_from_owners() -> int:
                     suffix = 1
                     while True:
                         cur.execute(
-                            "SELECT 1 FROM users.accounts WHERE username = %s", (username,)
+                            f"SELECT 1 FROM {database.USERS_ACCOUNTS_TABLE} WHERE username = %s", (username,)
                         )
                         if not cur.fetchone():
                             break
@@ -233,8 +217,8 @@ def ensure_users_from_owners() -> int:
                         suffix += 1
 
                     cur.execute(
-                        """
-                        INSERT INTO users.accounts
+                        f"""
+                        INSERT INTO {database.USERS_ACCOUNTS_TABLE}
                             (username, email, full_name, hashed_password, role, is_active)
                         VALUES (%s, %s, %s, %s, 'user', TRUE)
                         ON CONFLICT DO NOTHING
@@ -453,16 +437,32 @@ def get_field_detail(field_id: int) -> Optional[dict]:
                 d["harvest_date"]  = crop[2].isoformat() if crop[2] else None
                 d["field_crop_id"] = crop[3]
 
-            # Polygon GeoJSON from stg.field_geom
-            cur.execute(
-                "SELECT ST_AsGeoJSON(geom), area FROM stg.field_geom WHERE base_id = %s LIMIT 1",
-                (field_id,),
-            )
-            geom = cur.fetchone()
+            # Polygon GeoJSON (prefer current geo.field_crop_geometry, fallback stg.field_geom)
+            geom = None
+            if d.get("field_crop_id"):
+                cur.execute(
+                    """
+                    SELECT ST_AsGeoJSON(geom), ST_Area(geom::geography)
+                    FROM geo.field_crop_geometry
+                    WHERE field_crop_id = %s
+                    ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+                    LIMIT 1
+                    """,
+                    (d["field_crop_id"],),
+                )
+                geom = cur.fetchone()
+
+            if not geom or not geom[0]:
+                cur.execute(
+                    "SELECT ST_AsGeoJSON(geom), area FROM stg.field_geom WHERE base_id = %s ORDER BY id DESC LIMIT 1",
+                    (field_id,),
+                )
+                geom = cur.fetchone()
+
             if geom and geom[0]:
                 import json as _json
-                d["geojson"]  = _json.loads(geom[0])
-                d["area_m2"]  = float(geom[1]) if geom[1] is not None else None
+                d["geojson"] = _json.loads(geom[0])
+                d["area_m2"] = float(geom[1]) if geom[1] is not None else None
 
             return d
     finally:
@@ -632,8 +632,8 @@ def list_fields_full(owner_email: Optional[str] = None) -> list[dict]:
                     o.id            AS owner_id,
                     o.name          AS owner_name,
                     o.email         AS owner_email,
-                    round(fg.area::numeric, 4) AS area_ha,
-                    ST_AsGeoJSON(fg.geom) AS geojson
+                    round((COALESCE(fg_cur.area_m2, fg_legacy.area)::numeric / 10000.0), 4) AS area_ha,
+                    ST_AsGeoJSON(COALESCE(fg_cur.geom, fg_legacy.geom)) AS geojson
                 FROM core.fields f
                 LEFT JOIN geo.fields_location fl ON fl.field_id = f.id
                 LEFT JOIN agro.field_crops fc
@@ -646,9 +646,16 @@ def list_fields_full(owner_email: Optional[str] = None) -> list[dict]:
                 ) fo ON true
                 LEFT JOIN core.owners o ON o.id = fo.owner_id
                 LEFT JOIN LATERAL (
+                    SELECT geom, ST_Area(geom::geography) AS area_m2
+                    FROM geo.field_crop_geometry
+                    WHERE field_crop_id = fc.id
+                    ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+                    LIMIT 1
+                ) fg_cur ON true
+                LEFT JOIN LATERAL (
                     SELECT geom, area FROM stg.field_geom
-                    WHERE base_id = f.id ORDER BY id LIMIT 1
-                ) fg ON true
+                    WHERE base_id = f.id ORDER BY id DESC LIMIT 1
+                ) fg_legacy ON true
                 {where}
                 ORDER BY f.name
                 LIMIT 500
@@ -717,11 +724,23 @@ def list_fields_from_pg(owner_email: Optional[str] = None) -> list[dict]:
                     fl.lat,
                     fl.lng,
                     c.name AS crop,
-                    fc.sowing_date
+                    fc.sowing_date,
+                    round((COALESCE(fg_cur.area_m2, fg_legacy.area)::numeric / 10000.0), 4) AS area_ha
                 FROM core.fields f
                 LEFT JOIN geo.fields_location fl ON fl.field_id = f.id
                 LEFT JOIN agro.field_crops fc ON fc.field_id = f.id AND fc.is_current = TRUE
                 LEFT JOIN agro.crops c ON c.id = fc.crop_id
+                LEFT JOIN LATERAL (
+                    SELECT geom, ST_Area(geom::geography) AS area_m2
+                    FROM geo.field_crop_geometry
+                    WHERE field_crop_id = fc.id
+                    ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+                    LIMIT 1
+                ) fg_cur ON true
+                LEFT JOIN LATERAL (
+                    SELECT geom, area FROM stg.field_geom
+                    WHERE base_id = f.id ORDER BY id DESC LIMIT 1
+                ) fg_legacy ON true
                 {where}
                 ORDER BY f.created_at DESC
                 LIMIT 200
@@ -734,6 +753,8 @@ def list_fields_from_pg(owner_email: Optional[str] = None) -> list[dict]:
                 d = dict(zip(cols, row))
                 if d.get("sowing_date"):
                     d["sowing_date"] = d["sowing_date"].isoformat()
+                if d.get("area_ha") is not None:
+                    d["area_ha"] = float(d["area_ha"])
                 rows.append(d)
             return rows
     finally:

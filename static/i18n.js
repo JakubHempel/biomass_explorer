@@ -29,11 +29,12 @@ const I18N = {
 
     // ── Login ──────────────────────────────────────────────────────────────
     login_page_title:  'Logowanie – Biomass Explorer',
-    login_subtitle:    'Panel administratora',
+    login_subtitle:    'Dostęp do konta',
     login_h2:          'Zaloguj się',
     login_username:    'Nazwa użytkownika',
     login_password:    'Hasło',
     login_btn:         'Zaloguj się',
+    login_guest:       'Kontynuuj jako gość',
     login_btn_loading: 'Logowanie…',
     login_error_default: 'Nieprawidłowe dane logowania',
 
@@ -76,6 +77,17 @@ const I18N = {
     deactivate:        'Dezaktywuj',
     empty_users:       'Brak użytkowników',
     n_users:           (n) => `${n} użytkownik(ów)`,
+    flt_all:           'wszystkie',
+    ph_flt_user:       'użytkownik...',
+    ph_flt_email:      'email...',
+    ph_flt_name:       'nazwa...',
+    ph_flt_field:      'pole...',
+    ph_flt_latlng:     'szer./dł....',
+    ph_flt_area:       'ha...',
+    ph_flt_created:    'RRRR-MM-DD...',
+    pager_prev:        'Poprz',
+    pager_next:        'Nast',
+    pager_info:        (from, to, total, page, pages) => `${from}-${to} / ${total} (strona ${page}/${pages})`,
 
     // ── Admin – fields table ───────────────────────────────────────────────
     fields_card_title: 'Pola uprawne',
@@ -86,6 +98,8 @@ const I18N = {
     th_latlng:         'Lat / Lng',
     th_area:           'Pow. (ha)',
     th_field_created:  'Utworzone',
+    open_field_analysis: 'Otwórz w Biomass Explorer',
+    open_field_analysis_title: 'Otwiera Biomass Explorer i ładuje to pole, aby sprawdzić jego kondycję',
     n_fields:          (n) => `${n} pol(e)`,
     empty_fields:      'Brak zapisanych pól. Kliknij "Narysuj nowe pole", aby dodać pierwsze.',
 
@@ -136,6 +150,8 @@ const I18N = {
     lbl_latitude:       'Szerokość',
     lbl_longitude:      'Długość',
     legend_title:       'Właściciele',
+    legend_top_n:       (top, total) => `Widoczni właściciele: top ${top} z ${total}`,
+    legend_others:      (owners, fields) => `Pozostali (${owners} właśc., ${fields} pól)`,
     no_owner:           (n) => `Brak właściciela (${n})`,
     n_fields_count:     (n) => `${n} pól`,
     err_loading:        'Błąd ładowania: ',
@@ -213,11 +229,12 @@ const I18N = {
 
     // ── Login ──────────────────────────────────────────────────────────────
     login_page_title:  'Sign In – Biomass Explorer',
-    login_subtitle:    'Admin panel',
+    login_subtitle:    'Account access',
     login_h2:          'Sign in',
     login_username:    'Username',
     login_password:    'Password',
     login_btn:         'Sign in',
+    login_guest:       'Continue as guest',
     login_btn_loading: 'Signing in…',
     login_error_default: 'Invalid credentials',
 
@@ -260,6 +277,17 @@ const I18N = {
     deactivate:        'Deactivate',
     empty_users:       'No users found',
     n_users:           (n) => `${n} user(s)`,
+    flt_all:           'all',
+    ph_flt_user:       'user...',
+    ph_flt_email:      'email...',
+    ph_flt_name:       'name...',
+    ph_flt_field:      'field...',
+    ph_flt_latlng:     'lat/lng...',
+    ph_flt_area:       'ha...',
+    ph_flt_created:    'YYYY-MM-DD...',
+    pager_prev:        'Prev',
+    pager_next:        'Next',
+    pager_info:        (from, to, total, page, pages) => `${from}-${to} / ${total} (page ${page}/${pages})`,
 
     // ── Admin – fields table ───────────────────────────────────────────────
     fields_card_title: 'Cropland Fields',
@@ -270,6 +298,8 @@ const I18N = {
     th_latlng:         'Lat / Lng',
     th_area:           'Area (ha)',
     th_field_created:  'Created',
+    open_field_analysis: 'Open in Biomass Explorer',
+    open_field_analysis_title: 'Opens Biomass Explorer and loads this field so you can check its condition',
     n_fields:          (n) => `${n} field(s)`,
     empty_fields:      'No fields saved yet. Click "Draw New Field" to add the first one.',
 
@@ -320,6 +350,8 @@ const I18N = {
     lbl_latitude:       'Latitude',
     lbl_longitude:      'Longitude',
     legend_title:       'Owners',
+    legend_top_n:       (top, total) => `Visible owners: top ${top} of ${total}`,
+    legend_others:      (owners, fields) => `Others (${owners} owners, ${fields} fields)`,
     no_owner:           (n) => `No owner (${n})`,
     n_fields_count:     (n) => `${n} fields`,
     err_loading:        'Load error: ',
@@ -477,3 +509,72 @@ function initDarkMode() {
     btn.innerHTML = isDark ? '&#9788;' : '&#9789;';
   }
 }
+
+// ── Session guard (shared auth pages) ────────────────────────────────────────
+
+function _bmAuthClear() {
+  ['bm_token', 'bm_role', 'bm_username', 'bm_fullname', 'bm_session_expires_at']
+    .forEach(function(k) { localStorage.removeItem(k); });
+}
+
+function _bmIsReloadNavigation() {
+  try {
+    if (window.performance && typeof window.performance.getEntriesByType === 'function') {
+      const nav = window.performance.getEntriesByType('navigation');
+      if (nav && nav[0] && nav[0].type === 'reload') return true;
+    }
+    if (window.performance && window.performance.navigation) {
+      return window.performance.navigation.type === 1;
+    }
+  } catch (_) {}
+  return false;
+}
+
+function bmSetupSessionGuard(opts) {
+  opts = opts || {};
+  const timeoutMs = Number(opts.timeoutMs || (30 * 60 * 1000)); // default 30 min inactivity
+  const logoutOnReload = opts.logoutOnReload !== false;
+  const hasToken = !!localStorage.getItem('bm_token');
+  if (!hasToken) return true;
+
+  if (logoutOnReload && _bmIsReloadNavigation()) {
+    _bmAuthClear();
+    window.location.href = '/login';
+    return false;
+  }
+
+  const expiryKey = 'bm_session_expires_at';
+  const now = Date.now();
+  const currentExpiry = Number(localStorage.getItem(expiryKey) || '0');
+  if (currentExpiry && now > currentExpiry) {
+    _bmAuthClear();
+    window.location.href = '/login';
+    return false;
+  }
+
+  let lastTouchTs = 0;
+  function touchSession() {
+    const ts = Date.now();
+    // Throttle writes to localStorage.
+    if (ts - lastTouchTs < 5000) return;
+    lastTouchTs = ts;
+    localStorage.setItem(expiryKey, String(ts + timeoutMs));
+  }
+  touchSession();
+
+  ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(function(evt) {
+    window.addEventListener(evt, touchSession, { passive: true });
+  });
+
+  window.setInterval(function() {
+    const exp = Number(localStorage.getItem(expiryKey) || '0');
+    if (exp && Date.now() > exp) {
+      _bmAuthClear();
+      window.location.href = '/login';
+    }
+  }, 15000);
+
+  return true;
+}
+
+window.bmSetupSessionGuard = bmSetupSessionGuard;

@@ -106,6 +106,7 @@ class AnalysisRequest(BaseModel):
                           "LST", "VSWI", "TVDI", "TCI", "VHI"]
     cloud_cover: int = 20
     sensor: Optional[str] = None   # "Sentinel-2" or "Landsat 8/9" (used for RGB routing)
+    manual_mode: bool = False
 
 class TimeseriesPoint(BaseModel):
     date: str

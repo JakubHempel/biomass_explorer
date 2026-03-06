@@ -174,6 +174,51 @@ function updatePrimaryActionButtonLabel() {
     textEl.innerText = isManualMode ? t('search_images') : t('check_field_condition');
 }
 
+const SETUP_SECTION_STATE_KEY = 'biomass_setup_sections_v2';
+const SETUP_SECTION_IDS = ['field-time', 'field-health', 'aoi'];
+
+function _loadSetupSectionState() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(SETUP_SECTION_STATE_KEY) || '{}');
+        if (!raw || typeof raw !== 'object') return {};
+        return raw;
+    } catch (_) {
+        return {};
+    }
+}
+
+function _saveSetupSectionState(state) {
+    localStorage.setItem(SETUP_SECTION_STATE_KEY, JSON.stringify(state));
+}
+
+function _setSetupSectionCollapsed(sectionId, collapsed) {
+    const body = document.getElementById('setup-section-body-' + sectionId);
+    const chevron = document.getElementById('setup-section-chevron-' + sectionId);
+    if (!body || !chevron) return;
+    body.classList.toggle('collapsed', !!collapsed);
+    chevron.classList.toggle('collapsed', !!collapsed);
+    if (sectionId === 'aoi' && typeof syncAoiStatusVisibility === 'function') {
+        syncAoiStatusVisibility();
+    }
+}
+
+function toggleSetupSection(sectionId) {
+    const body = document.getElementById('setup-section-body-' + sectionId);
+    if (!body) return;
+    const state = _loadSetupSectionState();
+    const nextCollapsed = !body.classList.contains('collapsed');
+    _setSetupSectionCollapsed(sectionId, nextCollapsed);
+    state[sectionId] = nextCollapsed;
+    _saveSetupSectionState(state);
+}
+
+function initSetupSections() {
+    const state = _loadSetupSectionState();
+    SETUP_SECTION_IDS.forEach(function(id) {
+        _setSetupSectionCollapsed(id, !!state[id]);
+    });
+}
+
 function toggleSetupCard() {
     setupCardOpen = !setupCardOpen;
     document.getElementById('setup-body').classList.toggle('collapsed', !setupCardOpen);
@@ -191,10 +236,24 @@ function renderSetupSummary() {
     var indicesLabel = t('auto_indices_short');
     var manual = Array.from(document.querySelectorAll('input[name="idx"]:checked')).map(function(cb) { return cb.value; });
     if (manual.length > 0) indicesLabel = manual.join(', ');
+    var periodLabel = (start && end) ? (start + ' → ' + end) : (currentLang() === 'pl' ? 'niewybrany' : 'not selected');
+    var aoiLabel = currentAOI
+        ? (currentLang() === 'pl' ? 'wybrane' : 'selected')
+        : (currentLang() === 'pl' ? 'brak' : 'none');
+    if (typeof lastAoiStatusData !== 'undefined' && lastAoiStatusData) {
+        if (lastAoiStatusData.type === 'saved' && lastAoiStatusData.name) {
+            aoiLabel = (currentLang() === 'pl' ? 'Pole: ' : 'Field: ') + lastAoiStatusData.name;
+        } else if (lastAoiStatusData.type === 'parcel' && lastAoiStatusData.info && lastAoiStatusData.info.parcel_id) {
+            aoiLabel = (currentLang() === 'pl' ? 'Działka: ' : 'Parcel: ') + lastAoiStatusData.info.parcel_id;
+        } else if (lastAoiStatusData.type === 'custom' && currentAOI) {
+            aoiLabel = currentLang() === 'pl' ? 'Własny poligon' : 'Custom polygon';
+        }
+    }
     var summary = document.getElementById('setup-summary');
     summary.innerHTML =
         '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Pole' : 'Field') + '</span><span class="ss-value">' + fieldName + '</span></div>' +
-        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Okres' : 'Period') + '</span><span class="ss-value">' + (start || empty) + ' → ' + (end || empty) + '</span></div>' +
+        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'AOI' : 'AOI') + '</span><span class="ss-value">' + aoiLabel + '</span></div>' +
+        '<div class="ss-row"><span class="ss-label">' + (currentLang() === 'pl' ? 'Okres' : 'Period') + '</span><span class="ss-value">' + periodLabel + '</span></div>' +
         '<div class="ss-row"><span class="ss-label">' + t('indices') + '</span><span class="ss-value">' + indicesLabel + '</span></div>';
 }
 
@@ -682,7 +741,7 @@ async function startAnalysis() {
     try {
         const currentQuery = {
             field_id, start_date: start, end_date: end, indices: analysisIndices,
-            geojson: currentAOI, cloud_cover: 20
+            geojson: currentAOI, cloud_cover: 20, manual_mode: manualIndices.length > 0
         };
 
         setProgress(25);
@@ -960,6 +1019,7 @@ document.addEventListener('keydown', function(e) {
             cancelMeasure();
             if (pixelInspectorActive) disablePixelInspector();
             if (mapPickActive) disableMapPick();
+            if (drawAoiActive) disableDrawAOI();
             if (aoiEditing) finishEditAOI();
             map.closePopup();
             const aboutOverlay = document.getElementById('about-overlay');
@@ -1301,9 +1361,148 @@ function openWelcomePanel() {
     overlay.style.display = 'flex';
 }
 
+function ensureCompactAoiStatusVisible(fallbackFieldName) {
+    const compactEl = document.getElementById('aoi-status-compact');
+    if (!compactEl) return;
+    let html = '';
+    if (typeof lastAoiStatusData !== 'undefined' && lastAoiStatusData && typeof renderAoiStatusHtml === 'function') {
+        html = renderAoiStatusHtml(lastAoiStatusData);
+    } else if (fallbackFieldName) {
+        const safeName = String(fallbackFieldName)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        html = '<span class="aoi-ok-icon">&#128190;</span><span>' +
+            (currentLang() === 'pl'
+                ? ('Geometria pola <b>' + safeName + '</b> została przywrócona z bazy użytkownika.')
+                : ('Field geometry <b>' + safeName + '</b> has been restored from the user database.')) +
+            '</span>';
+    }
+    if (!html) return;
+    compactEl.innerHTML = html;
+    if (typeof syncAoiStatusVisibility === 'function') {
+        syncAoiStatusVisibility();
+    } else {
+        compactEl.style.display = 'flex';
+    }
+}
+
+async function initFieldFromQuery() {
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        const rawId = (params.get('field_id') || '').trim();
+        if (!rawId) return;
+        const clearFieldIdParam = function() {
+            if (typeof window.history.replaceState !== 'function') return;
+            params.delete('field_id');
+            const next = params.toString();
+            window.history.replaceState({}, '', window.location.pathname + (next ? ('?' + next) : '') + window.location.hash);
+        };
+        const fieldId = Number(rawId);
+        if (!Number.isFinite(fieldId) || fieldId <= 0) {
+            clearFieldIdParam();
+            return;
+        }
+
+        const token = localStorage.getItem('bm_token');
+        if (!token) {
+            clearFieldIdParam();
+            return;
+        }
+
+        const res = await fetch('/api/fields/' + fieldId, {
+            headers: { Authorization: 'Bearer ' + token }
+        });
+        if (!res.ok) {
+            clearFieldIdParam();
+            return;
+        }
+
+        const field = await res.json();
+        if (!field) return;
+
+        if (field.name) {
+            const fieldInput = document.getElementById('field_id');
+            if (fieldInput) fieldInput.value = field.name;
+        }
+
+        // Show DB-restore confirmation in AOI segment immediately.
+        lastAoiStatusData = { type: 'saved', name: field.name || ('Field ' + fieldId), info: null };
+        if (typeof showAoiStatus === 'function') {
+            showAoiStatus(lastAoiStatusData);
+        } else {
+            const compactEl = document.getElementById('aoi-status-compact');
+            if (compactEl) {
+                compactEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
+                compactEl.style.display = 'flex';
+            }
+        }
+
+        if (field.geojson) {
+            setAOI(field.geojson, null);
+            // Deep-link UX: when opening a field from list/admin, always land at fixed detail zoom.
+            try {
+                let targetCenter = null;
+                if (typeof aoiLayer !== 'undefined' && aoiLayer && typeof aoiLayer.getBounds === 'function') {
+                    const b = aoiLayer.getBounds();
+                    if (b && typeof b.isValid === 'function' && b.isValid()) {
+                        targetCenter = b.getCenter();
+                    }
+                }
+                if (!targetCenter && Number.isFinite(Number(field.lat)) && Number.isFinite(Number(field.lng))) {
+                    targetCenter = [Number(field.lat), Number(field.lng)];
+                }
+                if (typeof map !== 'undefined' && map) {
+                    if (targetCenter) map.setView(targetCenter, 18, { animate: true });
+                    else if (typeof map.setZoom === 'function') map.setZoom(18, { animate: true });
+                }
+            } catch (_) {
+                // Keep behavior resilient; default setAOI fitBounds is already applied.
+            }
+            lastAoiStatusData = { type: 'saved', name: field.name || ('Field ' + fieldId), info: null };
+            if (typeof showAoiStatus === 'function') {
+                showAoiStatus(lastAoiStatusData);
+            } else {
+                const statusEl = document.getElementById('aoi-status');
+                if (statusEl) {
+                    statusEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
+                    statusEl.style.display = 'flex';
+                }
+                const compactEl = document.getElementById('aoi-status-compact');
+                if (compactEl) {
+                    compactEl.innerHTML = renderAoiStatusHtml(lastAoiStatusData);
+                    compactEl.style.display = 'flex';
+                }
+            }
+        }
+        // Keep current AOI section toggle state unchanged; only ensure confirmation box is visible.
+        ensureCompactAoiStatusVisible(field.name || ('Field ' + fieldId));
+        setTimeout(function() { ensureCompactAoiStatusVisible(field.name || ('Field ' + fieldId)); }, 0);
+        setTimeout(function() { ensureCompactAoiStatusVisible(field.name || ('Field ' + fieldId)); }, 220);
+
+        // Keep URL clean after applying (or rejecting) deep-link prefill.
+        clearFieldIdParam();
+    } catch (_) {
+        // Keep page functional even if deep-link prefill fails.
+        try {
+            if (typeof window.history.replaceState === 'function') {
+                const params = new URLSearchParams(window.location.search || '');
+                if (params.has('field_id')) {
+                    params.delete('field_id');
+                    const next = params.toString();
+                    window.history.replaceState({}, '', window.location.pathname + (next ? ('?' + next) : '') + window.location.hash);
+                }
+            }
+        } catch (_) {}
+    }
+}
+
 // Auto-start tour on first visit only
 (function checkOnboarding() {
+    initSetupSections();
     initWelcomePanel();
+    initFieldFromQuery();
     const welcomeDone = localStorage.getItem('biomass_welcome_done');
     const tourDone = localStorage.getItem('biomass_tour_done');
     const welcomeOverlay = document.getElementById('welcome-overlay');
