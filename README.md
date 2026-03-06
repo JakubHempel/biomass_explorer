@@ -4,6 +4,31 @@
 
 ---
 
+## Documentation
+
+Professional project documentation is available in `docs/`:
+
+- `docs/README.md` (language index)
+- `docs/en/README.md`
+- `docs/en/architecture.md`
+- `docs/en/setup-and-configuration.md`
+- `docs/en/api-reference.md`
+- `docs/en/database-and-security.md`
+- `docs/en/user-and-admin-guide.md`
+
+Polish documentation is available in `docs/pl/`:
+
+- `docs/pl/README.md`
+- `docs/pl/architektura.md`
+- `docs/pl/konfiguracja-i-uruchomienie.md`
+- `docs/pl/referencja-api.md`
+- `docs/pl/baza-danych-i-bezpieczenstwo.md`
+- `docs/pl/przewodnik-uzytkownika-i-admina.md`
+
+For implementation details and endpoint contracts, treat the docs above and source code as the canonical reference.
+
+---
+
 ## Key Features
 
 ### Satellite Analysis
