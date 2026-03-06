@@ -11,6 +11,11 @@ Konfiguracja jest stała w `database.py`:
 - `DB_SCHEMA = "obs"`
 - `DB_TABLE_NAME = "vegetation_indices"`
 
+Rozwiązywanie konfiguracji połączenia:
+
+1. zmienne środowiskowe `DB_*` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, opcjonalnie `DB_SSLMODE`),
+2. fallback do `db_config.json`.
+
 ## 2) Kontrakt tabeli
 
 Oczekiwany kontrakt DDL:

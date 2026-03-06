@@ -11,6 +11,11 @@ Configured in `database.py`:
 - `DB_SCHEMA = "obs"`
 - `DB_TABLE_NAME = "vegetation_indices"`
 
+Connection config resolution:
+
+1. `DB_*` environment variables (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, optional `DB_SSLMODE`)
+2. fallback `db_config.json`
+
 ## 2) Core Table Contract
 
 The expected DDL is maintained in:

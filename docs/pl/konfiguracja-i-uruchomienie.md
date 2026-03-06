@@ -36,8 +36,23 @@ Uwagi:
 
 ## 4) Konfiguracja bazy
 
-Dane połączenia są czytane z `db_config.json`.
-Wzór: `db_config.example.json`.
+Preferowana konfiguracja produkcyjna to zmienne środowiskowe:
+
+- `DB_HOST`
+- `DB_PORT`
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_SSLMODE` (opcjonalnie, domyślnie `require` w trybie env)
+
+Fallback dla środowiska lokalnego:
+
+- `db_config.json` w katalogu projektu (wzór: `db_config.example.json`)
+
+Kolejność rozwiązywania konfiguracji:
+
+1. zmienne `DB_*`,
+2. plik fallback `db_config.json`.
 
 Dla Azure PostgreSQL:
 

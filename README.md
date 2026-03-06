@@ -105,8 +105,8 @@ biomass_explorer/
 ├── main.py              # FastAPI app, endpoints, favicon, static file serving
 ├── services.py          # GEE processing: S2 + Landsat pipelines, tile URLs, pixel queries
 ├── schemas.py           # Pydantic request/response schemas (incl. pixel inspector)
-├── database.py          # PostgreSQL config + connection checks (db_config.json)
-├── db_config.json       # PostgreSQL connection settings (local, not committed)
+├── database.py          # PostgreSQL config + connection checks (DB_* env first, file fallback)
+├── db_config.json       # Optional local PostgreSQL fallback settings (not committed)
 ├── uldk.py              # Polish cadastral (ULDK/GUGiK) parcel lookup service
 ├── requirements.txt     # Python dependencies
 ├── .env                 # GEE_PROJECT_ID (not committed)
@@ -176,10 +176,12 @@ After these steps you will have a project ID ready to use.
    ```text
    ENABLE_DB='1'
    ```
-   Notes:
-   - Connection host/user/password/db are read from `db_config.json` in project root.
-   - On Azure, the username is often `username@servername`.
-   - Runtime measurements target is hardcoded to `obs.vegetation_indices`.
+  Notes:
+  - Runtime measurements target is hardcoded to `obs.vegetation_indices`.
+  - DB config resolution order:
+    1. `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, optional `DB_SSLMODE`
+    2. fallback to `db_config.json` in project root
+  - On Azure, the username is often `username@servername`.
 
 3. **Install dependencies:**
    ```bash
@@ -215,8 +217,9 @@ Use this checklist for PostgreSQL persistence on Azure:
 1. Create an Azure Database for PostgreSQL instance.
 2. Add your client/app IP in the server firewall (avoid `0.0.0.0/0` for production).
 3. Create a dedicated application user with least privilege.
-4. Create/update `db_config.json` with valid connection values:
-   - `host`, `port`, `database`, `user`, `password`, `sslmode`
+4. Configure database credentials (recommended: environment variables):
+   - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, optional `DB_SSLMODE`
+   - or provide `db_config.json` as local fallback with equivalent values.
 5. In `.env`, set:
    - `ENABLE_DB='1'`
 6. Ensure table/index contract exists by running:
@@ -237,15 +240,15 @@ Use this checklist for PostgreSQL persistence on Azure:
 
 - **`password authentication failed`**:
   - Verify username format (`username@servername` is common on Azure).
-  - Confirm password is correct in `db_config.json`.
+  - Confirm `DB_PASSWORD` (or fallback file password) is correct.
 - **`could not connect` / timeout**:
   - Check firewall rules and server hostname.
   - Confirm port `5432` is reachable.
 - **`SSL is required`**:
-  - Ensure `sslmode='require'` in `db_config.json` for Azure.
+  - Ensure `DB_SSLMODE='require'` (or `sslmode='require'` in fallback file).
 - **No rows persisted**:
   - Confirm `ENABLE_DB='1'`.
-  - Confirm `db_config.json` exists and app restarted.
+  - Confirm DB credentials are set (`DB_*`) or fallback file exists.
   - Confirm request is authenticated and `field_id` belongs to the current user.
 - **Rows not visible in expected table**:
   - Verify writes target `obs.vegetation_indices` (hardcoded runtime target).

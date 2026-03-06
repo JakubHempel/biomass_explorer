@@ -41,8 +41,18 @@ Notes:
 
 ## 4) Database Configuration
 
-Database connection is read from `db_config.json` in project root.
-Use `db_config.example.json` as template:
+Preferred production configuration is environment variables:
+
+- `DB_HOST`
+- `DB_PORT`
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_SSLMODE` (optional, defaults to `require` in env mode)
+
+Fallback for local development:
+
+- `db_config.json` in project root (template: `db_config.example.json`)
 
 ```json
 {
@@ -54,6 +64,11 @@ Use `db_config.example.json` as template:
   "sslmode": "prefer"
 }
 ```
+
+Resolution order used by application:
+
+1. `DB_*` environment variables
+2. `db_config.json` fallback file
 
 For Azure PostgreSQL:
 
