@@ -2,8 +2,6 @@
 
 **Biomass Explorer** is a web-based crop monitoring tool that combines **Sentinel-2** and **Landsat 8/9** satellite imagery via **Google Earth Engine** to analyse vegetation health, chlorophyll content, moisture levels, surface temperature, and drought stress over any field boundary.
 
-![Home — full dashboard view](static/screenshots/0_home.png)
-
 ---
 
 ## Key Features
@@ -29,8 +27,6 @@
 - **Boundary editing** — after loading any AOI, edit the polygon vertices directly on the map (double-click or press Escape to confirm).
 - **Saved fields** — recently used fields are stored in the browser and can be reloaded instantly with their geometry.
 
-![Cadastral parcel finder](static/screenshots/1_cadastral_finder.png)
-
 ### UI/UX
 - **Dark / Light mode** — toggle with the header button or press `D`.
 - **Collapsible sidebar** — toggle the sidebar to maximise map space.
@@ -42,24 +38,9 @@
 
 ### Backend & Storage
 - **FastAPI** backend with async endpoints.
-- **PostgreSQL persistence** — every analysis run is upserted into `obs.vegetation_indices`, queryable by field ID.
+- **Guest + authenticated mode** — anonymous users can run analysis without persistence; authenticated users can persist and read history for their own fields.
+- **PostgreSQL persistence** — authenticated analyses are upserted into `obs.vegetation_indices`, keyed by `(field_id, captured_at, sensor)`.
 - **ULDK integration** — Polish cadastral parcel lookup via the ULDK (GUGiK) web service.
-
----
-
-## Screenshots
-
-### Analysis Results & Period Averages
-![Results overview with period averages and observation dates](static/screenshots/2_results.png)
-
-### Index Visualisation on Map
-![NDVI index overlay on satellite imagery with layer control and legend](static/screenshots/3_index_vis.png)
-
-### Pixel Inspector
-![Pixel value popup showing per-index values at a clicked location](static/screenshots/4_pixel_info.png)
-
-### Time Series Chart
-![NDMI time series chart showing moisture decline over the season](static/screenshots/5_time_series_chart.png)
 
 ---
 
@@ -189,6 +170,17 @@ After these steps you will have a project ID ready to use.
 
 6. **Open the app** at [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
+### Authentication & Persistence Behavior
+
+- `/app` remains available for guests (no login required).
+- Guests can run `/calculate/biomass`, but results are not persisted to PostgreSQL.
+- Logged-in users can:
+  - save fields and geometries,
+  - persist analysis history (if they own the selected field),
+  - browse history for owned fields.
+- Field ownership is validated server-side for persistence/history access.
+- `field_id` should come from selected DB field in UI state (background handling), not manual user-entered IDs.
+
 ---
 
 ## Azure PostgreSQL (Safe Setup)
@@ -209,7 +201,7 @@ Use this checklist for PostgreSQL persistence on Azure:
    python -m pip install -r requirements.txt
    python -m uvicorn main:app --reload
    ```
-8. Trigger one analysis and verify `/history/{field_id}` returns data.
+8. Trigger one analysis while logged in and verify `/history/{field_id}` returns data.
 9. Verify direct table writes in PgAdmin:
    ```sql
    SELECT COUNT(*) FROM obs.vegetation_indices;
@@ -229,6 +221,7 @@ Use this checklist for PostgreSQL persistence on Azure:
 - **No rows persisted**:
   - Confirm `ENABLE_DB='1'`.
   - Confirm `db_config.json` exists and app restarted.
+  - Confirm request is authenticated and `field_id` belongs to the current user.
 - **Rows not visible in expected table**:
   - Verify writes target `obs.vegetation_indices` (hardcoded runtime target).
 
@@ -291,12 +284,16 @@ Important:
 
 | Method | Path | Description |
 |:-------|:-----|:------------|
-| `POST` | `/calculate/biomass` | Run analysis — computes selected indices, saves to DB, returns timeseries + summary |
+| `POST` | `/calculate/biomass` | Run analysis — computes selected indices, returns timeseries + summary; persists only for authenticated owners |
+| `GET`  | `/history/{field_id}` | Retrieve stored measurements for an owned field (guest calls return empty list) |
 | `POST` | `/visualize/map` | Generate GEE tile URL for a single index + date |
+| `POST` | `/visualize/batch` | Generate tile URLs for many indices in one request |
 | `POST` | `/api/pixel-value` | Sample index values at a specific lat/lng for a given date/sensor |
-| `GET`  | `/api/uldk/parcel` | Look up a cadastral parcel by TERYT ID or region name |
-| `GET`  | `/api/uldk/point` | Identify the cadastral parcel at a given lat/lng coordinate |
-| `GET`  | `/history/{field_id}` | Retrieve all stored measurements for a field from PostgreSQL |
+| `GET`  | `/api/uldk/search` | Look up a cadastral parcel by TERYT ID or region name |
+| `GET`  | `/api/uldk/locate` | Identify the cadastral parcel at a given lat/lng coordinate |
+| `GET`  | `/api/fields` | List user-visible fields (admin: all, user: own only) |
+| `GET`  | `/api/fields/browse` | Rich field listing (owner/crop/area/geojson + history metadata) |
+| `GET`  | `/api/fields/{field_id}` | Field detail including geometry |
 | `GET`  | `/favicon.ico` | Serve the app favicon |
 | `GET`  | `/` | Serve the frontend |
 
@@ -338,7 +335,21 @@ Unique constraint should include sensor:
 
 - `(field_id, captured_at, sensor)`
 
+Expected relational dependency:
+
+- `obs.vegetation_indices.field_id` should reference `core.fields.id`
+  (typically FK with `ON DELETE CASCADE`).
+
 If your database currently has unique index `(field_id, captured_at)` only, inserts can fail when both Sentinel-2 and Landsat exist on the same date.
+
+### Field History in UI
+
+- Fields list and detail views expose history metadata from DB:
+  - `calc_count` (number of persisted records),
+  - `last_calculated_at` (latest saved capture timestamp).
+- In `/fields` detail view, users can open a full history table for the selected field.
+- History table supports all 15 indices:
+  - `NDVI`, `NDRE`, `GNDVI`, `EVI`, `SAVI`, `CIre`, `MTCI`, `IRECI`, `NDMI`, `NMDI`, `LST`, `VSWI`, `TVDI`, `TCI`, `VHI`.
 
 ---
 
