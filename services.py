@@ -657,9 +657,23 @@ def _compute_core_summary_from_period_composites(
 # ===========================================================================
 #  Main analysis logic  (optimised: threaded dates, single getInfo per date)
 # ===========================================================================
+def _normalize_geojson(geojson: dict) -> dict:
+    """Accept GeoJSON Feature or raw geometry; return geometry dict for ee.Geometry()."""
+    if not geojson or not isinstance(geojson, dict):
+        raise ValueError("geojson must be a non-empty object")
+    if geojson.get("type") == "Feature" and "geometry" in geojson:
+        return geojson["geometry"]
+    if geojson.get("type") in ("Polygon", "MultiPolygon", "Point", "MultiPoint", "LineString", "MultiLineString"):
+        return geojson
+    raise ValueError(
+        "geojson must be a GeoJSON geometry (type Polygon/MultiPolygon/...) or Feature with geometry"
+    )
+
+
 def calculate_biomass_logic(request: AnalysisRequest) -> dict:
     t0 = time.time()
-    region = ee.Geometry(request.geojson)
+    geom = _normalize_geojson(request.geojson)
+    region = ee.Geometry(geom)
 
     requested_s2 = [i for i in request.indices if i in S2_INDICES]
     requested_landsat = [i for i in request.indices if i in LANDSAT_INDICES]
@@ -709,8 +723,17 @@ def calculate_biomass_logic(request: AnalysisRequest) -> dict:
                 ls_col, ls_dates = result
 
     t_dates = time.time()
-    log.info("Date discovery: S2=%d, Landsat=%d dates in %.1fs",
-             len(s2_dates), len(ls_dates), t_dates - t0)
+    log.info(
+        "Date discovery: S2=%d, Landsat=%d dates in %.1fs (range %s–%s, cloud<=%s%%)",
+        len(s2_dates), len(ls_dates), t_dates - t0,
+        request.start_date, request.end_date, request.cloud_cover,
+    )
+    if not s2_dates and not ls_dates:
+        log.warning(
+            "No satellite dates found for AOI. Check: date range %s–%s, "
+            "cloud_cover<=%s%%, and that the geometry is valid and within data coverage.",
+            request.start_date, request.end_date, request.cloud_cover,
+        )
 
     fast_core_mode = (len(request.indices) > 0 and
                       set(request.indices).issubset(_FIELD_SCORE_CORE_INDICES))
@@ -886,10 +909,15 @@ def calculate_biomass_logic(request: AnalysisRequest) -> dict:
 #  Database persistence
 # ===========================================================================
 def save_results_to_db(db: Session, result_data: dict):
+    raw_field_id = result_data.get("metadata", {}).get("field_id")
     try:
-        field_id = int(result_data["metadata"]["field_id"])
+        field_id = int(raw_field_id)
     except (TypeError, ValueError):
-        raise ValueError("field_id must be a numeric value for the target database table.")
+        log.info(
+            "Skipping DB save: field_id %r is not numeric (e.g. custom field name). Analysis results still returned.",
+            raw_field_id,
+        )
+        return
     updated_count = 0
     new_count = 0
     processed_count = 0
@@ -1082,7 +1110,7 @@ def _build_stress_hotspot_image(region, s_date, e_date, cloud_cover, include_lan
 #  Tile URL generation for map visualisation
 # ===========================================================================
 def generate_tile_url(request: AnalysisRequest, index_name: str) -> dict:
-    region = ee.Geometry(request.geojson)
+    region = ee.Geometry(_normalize_geojson(request.geojson))
 
     s_date = ee.Date(request.start_date)
     e_date = ee.Date(request.end_date)
@@ -1404,7 +1432,7 @@ def generate_tile_urls_batch(date: str, sensor: str, indices: list,
     Returns {"date", "sensor", "layers": [{"layer_url", "index_name"}, ...], "elapsed_ms"}
     """
     t0 = time.time()
-    region = ee.Geometry(geojson)
+    region = ee.Geometry(_normalize_geojson(geojson))
     s_date = ee.Date(date)
     e_date = s_date.advance(1, 'day')
 
@@ -1462,7 +1490,7 @@ def query_pixel_value(lat: float, lng: float, date: str, sensor: str,
                       indices: list, geojson: dict, cloud_cover: int = 20,
                       start_date: Optional[str] = None, end_date: Optional[str] = None) -> dict:
     """Return index values at a specific lat/lng for a single date/sensor."""
-    region = ee.Geometry(geojson)
+    region = ee.Geometry(_normalize_geojson(geojson))
     point = ee.Geometry.Point([lng, lat])
     s_date = ee.Date(date)
     e_date = s_date.advance(1, 'day')

@@ -645,7 +645,11 @@ async function startAnalysis() {
         const counter = localStorage.getItem('biomass_field_counter') || '1';
         fieldInput.value = (currentLang() === 'pl' ? 'Pole_' : 'Field_') + counter;
     }
-    const field_id = fieldInput.value.trim();
+    var field_id = fieldInput.value.trim();
+    var numericIdEl = document.getElementById('field_id_numeric');
+    if (numericIdEl && numericIdEl.value.trim() && /^\d+$/.test(numericIdEl.value.trim())) {
+        field_id = numericIdEl.value.trim();
+    }
     const start    = document.getElementById('start_date').value;
     const end      = document.getElementById('end_date').value;
     const manualIndices = getManualSelectedIndices();
@@ -763,7 +767,10 @@ async function startAnalysis() {
             const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
             setStatus(t('status_complete', { total: total, elapsed: elapsed }), "success");
 
-            if (field_id && currentAOI) saveFieldToRecent(field_id, currentAOI, null);
+            if (currentAOI) {
+                var displayName = document.getElementById('field_id').value.trim();
+                if (displayName) saveFieldToRecent(displayName, currentAOI, null);
+            }
         }
         setProgress(100);
         setTimeout(() => setProgress(-1), 800);
@@ -1111,6 +1118,10 @@ document.querySelectorAll('input[name="idx"]').forEach(function(cb) {
 });
 document.getElementById('start_date').addEventListener('change', updateSearchBtn);
 document.getElementById('end_date').addEventListener('change', updateSearchBtn);
+document.getElementById('field_id').addEventListener('input', function() {
+    var numEl = document.getElementById('field_id_numeric');
+    if (numEl) numEl.value = '';
+});
 
 // Recheck when AOI changes (called from setAOI)
 var origSetAOI = setAOI;

@@ -199,8 +199,18 @@ function applyGeoJSON() {
     const raw = document.getElementById('geojson_input').value.trim();
     if (!raw) { showToast(t('toast_geojson_paste'), 'warning'); return; }
     try {
-        const coords = JSON.parse(raw);
-        const geojson = { type: "Polygon", coordinates: coords };
+        const parsed = JSON.parse(raw);
+        let geojson;
+        if (parsed && parsed.type === 'Feature' && parsed.geometry) {
+            geojson = parsed.geometry;
+        } else if (parsed && (parsed.type === 'Polygon' || parsed.type === 'MultiPolygon') && Array.isArray(parsed.coordinates)) {
+            geojson = parsed;
+        } else if (Array.isArray(parsed)) {
+            geojson = { type: 'Polygon', coordinates: parsed };
+        } else {
+            showToast(t('toast_geojson_invalid'), 'error');
+            return;
+        }
         setAOI(geojson, null);
     } catch(e) {
         showToast(t('toast_geojson_invalid'), 'error');
@@ -560,7 +570,17 @@ async function renderSavedFields() {
             const res = await fetch('/api/fields/browse', {
                 headers: { Authorization: 'Bearer ' + token }
             });
-            if (res.ok) dbFields = await res.json();
+            if (res.ok) {
+                dbFields = await res.json();
+            } else if (res.status === 401) {
+                localStorage.removeItem('bm_token');
+                localStorage.removeItem('bm_role');
+                localStorage.removeItem('bm_username');
+                localStorage.removeItem('bm_fullname');
+                if (typeof showToast === 'function') {
+                    showToast(currentLang() === 'pl' ? 'Sesja wygasła. Zaloguj się ponownie, aby zobaczyć pola z bazy.' : 'Session expired. Sign in again to see database fields.', 'warning');
+                }
+            }
         } catch (_) {}
     }
 
@@ -613,6 +633,8 @@ function escSq(s) { return String(s || '').replace(/'/g, "\\'"); }
 
 async function loadDbField(id, name) {
     document.getElementById('field_id').value = name;
+    var numEl = document.getElementById('field_id_numeric');
+    if (numEl) numEl.value = String(id);
     document.getElementById('saved-fields-dropdown').style.display = 'none';
 
     try {
@@ -620,6 +642,16 @@ async function loadDbField(id, name) {
         const res = await fetch('/api/fields/' + id, {
             headers: { Authorization: 'Bearer ' + token }
         });
+        if (res.status === 401) {
+            localStorage.removeItem('bm_token');
+            localStorage.removeItem('bm_role');
+            localStorage.removeItem('bm_username');
+            localStorage.removeItem('bm_fullname');
+            if (typeof showToast === 'function') {
+                showToast(currentLang() === 'pl' ? 'Sesja wygasła. Zaloguj się ponownie.' : 'Session expired. Please sign in again.', 'warning');
+            }
+            return;
+        }
         if (res.ok) {
             const d = await res.json();
             if (d.geojson) {
@@ -638,6 +670,8 @@ function loadSavedField(index) {
     const f = fields[index];
     if (!f) return;
     document.getElementById('field_id').value = f.name;
+    var numEl = document.getElementById('field_id_numeric');
+    if (numEl) numEl.value = '';
     setAOI(f.geojson, f.info);
     document.getElementById('saved-fields-dropdown').style.display = 'none';
 

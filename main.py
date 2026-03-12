@@ -97,8 +97,11 @@ async def calculate_biomass_endpoint(
         if db is not None:
             services.save_results_to_db(db, result)
         return result
+    except ValueError as e:
+        log.warning("calculate_biomass validation error: %s", e)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"Error: {e}")
+        log.exception("calculate_biomass failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 def _measurement_to_dict(r: models.Measurement) -> dict:
